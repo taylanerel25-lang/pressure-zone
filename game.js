@@ -30,14 +30,15 @@ function handleTap() {
     const now = Date.now();
     if (now - lastTapTime < DEBOUNCE_MS) return;
     lastTapTime = now;
+
+    if (state === 'menu' || state === 'gameover') {
+        resetGame();
+        startGame();
+    }
+
     if (state === 'playing') {
         player.vy += TAP_IMPULSE;
         playSound('tap');
-    } else if (state === 'menu') {
-        startGame();
-    } else if (state === 'gameover') {
-        resetGame();
-        startGame();
     }
 }
 
