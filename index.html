@@ -315,11 +315,13 @@
         // draw
         ctx.fillStyle='#000'; ctx.fillRect(0,0,cssW,cssH);
         updateStars(dt); drawStars(starsA,0.5); drawStars(starsB,0.9);
-        drawObstacles(); drawTrail(); 
-        drawShip();
+        drawObstacles(); drawTrail();
         drawHUD();
         if (state!=='playing') drawOverlay();
         updateFlash(); drawFlash();
+
+        // draw the ship LAST so it appears above overlays
+        drawShip();
       }catch(e){ console.error('Loop error', e); }
       requestAnimationFrame(loop);
     }
