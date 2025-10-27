@@ -264,6 +264,18 @@
       }
     }
 
+    function drawObstacles() {
+      ctx.fillStyle = '#888'; // Gray for space junk/obstacles
+      for (const o of obstacles) {
+        const gapTop = o.gapY - o.gapH / 2;
+        const gapBot = o.gapY + o.gapH / 2;
+        // Top section
+        ctx.fillRect(o.x, 0, o.width, gapTop);
+        // Bottom section
+        ctx.fillRect(o.x, gapBot, o.width, cssH - gapBot);
+      }
+    }
+
     // ---------- game flow / HUD ----------
     function gameOver(){ state='gameover'; playSound('die'); flashStart=performance.now(); flashAlpha=0.35; }
     function updateFlash(){ if (flashAlpha>0){ const e=performance.now()-flashStart; flashAlpha=0.35*(1-e/flashDuration); if (flashAlpha<0) flashAlpha=0; } }
