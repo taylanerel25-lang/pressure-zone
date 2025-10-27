@@ -159,6 +159,7 @@ function updateTrail() {
 }
 
 function drawTrail() {
+    if (trail.length === 0) return;
     ctx.strokeStyle = '#fff';
     ctx.globalAlpha = 0.12;
     ctx.beginPath();
@@ -182,11 +183,11 @@ function roundRectPath(x,y,w,h,r){
 
 function drawUFO() {
     // Saucer rim
-    ctx.fillStyle = '#aaa';
+    ctx.fillStyle = '#ddd';
     roundRectPath(player.x - 20, player.y - 4, 40, 8, 4);
     ctx.fill();
     // Dome
-    ctx.fillStyle = '#ccc';
+    ctx.fillStyle = '#fff';
     ctx.beginPath();
     ctx.arc(player.x, player.y - 6, 12, 0, Math.PI * 2);
     ctx.fill();
@@ -319,7 +320,7 @@ function drawOverlay() {
         ctx.font = 'bold 48px sans-serif';
         ctx.fillText('PRESSURE ZONE', innerWidth * 0.5, innerHeight * 0.4);
         ctx.font = '24px sans-serif';
-        ctx.fillText('Tap to rise · Dodge the junk', innerWidth * 0.5, innerHeight * 0.5);
+        ctx.fillText('Tap to start · Tap to rise · Dodge the junk', innerWidth * 0.5, innerHeight * 0.5);
     } else if (state === 'gameover') {
         ctx.font = 'bold 48px sans-serif';
         ctx.fillText(score, innerWidth * 0.5, innerHeight * 0.4);
