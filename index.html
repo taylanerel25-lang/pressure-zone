@@ -129,10 +129,91 @@
       ctx.strokeStyle = '#fff'; ctx.globalAlpha = .12;
       ctx.beginPath(); ctx.moveTo(player.x, trail[0]); for (let i=1;i<trail.length;i++) ctx.lineTo(player.x, trail[i]); ctx.stroke(); ctx.globalAlpha = 1;
     }
+    function drawShip() {
+      // tilt depends on vertical speed: nose up when rising, down when falling
+      const tilt = Math.max(-0.6, Math.min(0.6, -player.vy / 700));
+
+      ctx.save();
+      ctx.translate(player.x, player.y);
+      ctx.rotate(tilt);
+
+      // sizes
+      const w = 36, h = 48, r = 10;
+
+      // body
+      ctx.fillStyle = '#d9dde2';
+      roundRectPath(-w/2, -h/2 + 6, w, h - 12, r);
+      ctx.fill();
+
+      // nose cone
+      ctx.beginPath();
+      ctx.moveTo(0, -h/2 - 8);
+      ctx.lineTo(-w*0.45, -h/2 + 10);
+      ctx.lineTo( w*0.45, -h/2 + 10);
+      ctx.closePath();
+      ctx.fillStyle = '#ffffff';
+      ctx.fill();
+
+      // window
+      ctx.beginPath();
+      ctx.arc(0, -6, 7, 0, Math.PI*2);
+      ctx.fillStyle = '#9cc7ff';
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(255,255,255,.85)';
+      ctx.stroke();
+
+      // side fins
+      ctx.fillStyle = '#ff6961';
+      ctx.beginPath();
+      ctx.moveTo(-w/2, 4);
+      ctx.lineTo(-w/2 - 10, 14);
+      ctx.lineTo(-w/2 + 4, 16);
+      ctx.closePath();
+      ctx.fill();
+
+      ctx.beginPath();
+      ctx.moveTo(w/2, 4);
+      ctx.lineTo(w/2 + 10, 14);
+      ctx.lineTo(w/2 - 4, 16);
+      ctx.closePath();
+      ctx.fill();
+
+      // tail ring
+      ctx.fillStyle = '#b8c0c7';
+      roundRectPath(-w*0.35, h/2 - 16, w*0.7, 10, 4);
+      ctx.fill();
+
+      // flame (stronger when tapping / going up)
+      const up = Math.max(0, -player.vy);     // only when moving up
+      const flame = Math.min(28, 8 + up * 0.06);
+      if (flame > 0.5) {
+        const jitter = (Math.sin(performance.now()*0.02) * 2);
+        ctx.beginPath();
+        ctx.moveTo(-8, h/2 - 6);
+        ctx.lineTo(  8, h/2 - 6);
+        ctx.lineTo(  0, h/2 - 6 + flame + jitter);
+        ctx.closePath();
+        // inner gradient-ish with two fills
+        ctx.fillStyle = '#ffb347'; ctx.fill();
+        ctx.beginPath();
+        ctx.moveTo(-5, h/2 - 6);
+        ctx.lineTo( 5, h/2 - 6);
+        ctx.lineTo( 0, h/2 - 6 + flame*0.7 + jitter*0.6);
+        ctx.closePath();
+        ctx.fillStyle = '#ffd1a6'; ctx.fill();
+      }
+
+      ctx.restore();
+    }
+
+    // keep original UFO function intact (not used now)
     function drawUFO(){
-      ctx.fillStyle = '#ddd'; roundRectPath(player.x-20, player.y-4, 40, 8, 4); ctx.fill();
-      ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(player.x, player.y-6, 12, 0, Math.PI*2); ctx.fill();
-      ctx.strokeStyle = 'rgba(255,255,255,.5)'; ctx.beginPath(); ctx.arc(player.x, player.y, 20, 0, Math.PI*2); ctx.stroke();
+      ctx.fillStyle = '#ddd';
+      roundRectPath(player.x - 20, player.y - 4, 40, 8, 4); ctx.fill();
+      ctx.fillStyle = '#fff';
+      ctx.beginPath(); ctx.arc(player.x, player.y - 6, 12, 0, Math.PI*2); ctx.fill();
+      ctx.strokeStyle = 'rgba(255,255,255,.5)';
+      ctx.beginPath(); ctx.arc(player.x, player.y, 20, 0, Math.PI*2); ctx.stroke();
     }
 
     // ---------- obstacles ----------
@@ -161,7 +242,7 @@
 
     function updateObstacles(dt){
       const lineX = cssW * 0.5;
-      for (let i=obstacles.length-1; i>=0; i--){
+      for (let i=obstacles.length-1; i>=0; i++){
         const o = obstacles[i];
         const prevCenter = o.x + (o.dir > 0 ? o.width*0.5 : -o.width*0.5);
         o.x += o.dir * o.speed * dt;
@@ -234,7 +315,9 @@
         // draw
         ctx.fillStyle='#000'; ctx.fillRect(0,0,cssW,cssH);
         updateStars(dt); drawStars(starsA,0.5); drawStars(starsB,0.9);
-        drawObstacles(); drawTrail(); drawUFO(); drawHUD();
+        drawObstacles(); drawTrail(); 
+        drawShip();
+        drawHUD();
         if (state!=='playing') drawOverlay();
         updateFlash(); drawFlash();
       }catch(e){ console.error('Loop error', e); }
