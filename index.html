@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+  <title>One‑Thumb Runner Starter</title>
+  <meta name="theme-color" content="#0ea5e9" />
+  <style>
+    :root{ --bg:#0b1220; --ink:#e5f4ff; --accent:#0ea5e9; --muted:#9fb3c8; }
+    html,body{ height:100%; margin:0; background:var(--bg); color:var(--ink); font:16px/1.4 ui-rounded,system-ui,Segoe UI,Roboto,Helvetica,Arial; }
+    .hud{ position:fixed; inset:auto 0 0 0; display:flex; justify-content:space-between; padding:10px 14px; pointer-events:none; }
+    .hud .left, .hud .right{ font-weight:700; text-shadow:0 2px 0 rgba(0,0,0,.5); }
+    .btn{ position:fixed; right:14px; top:14px; padding:8px 12px; border-radius:12px; background:rgba(255,255,255,.08); color:var(--ink); border:1px solid rgba(255,255,255,.12); cursor:pointer; }
+    .center{ position:fixed; inset:0; display:grid; place-items:center; text-align:center; }
+    .hint{ color:var(--muted); font-size:14px; margin-top:8px; }
+    canvas{ display:block; width:100vw; height:100vh; touch-action:none; }
+  </style>
+</head>
+<body>
+  <button class="btn" id="muteBtn" aria-label="Toggle sound">🔊</button>
+  <div class="hud"><div class="left" id="score">0</div><div class="right" id="best">BEST 0</div></div>
+  <div class="center" id="menu">
+    <div>
+      <h1 style="margin:0 0 6px">Dash Lanes</h1>
+      <div class="hint">Tap anywhere to switch lanes · Avoid blocks</div>
+    </div>
+  </div>
+  <canvas id="game"></canvas>
+
+  <script>
+  // --- tiny utilities -------------------------------------------------------
+  const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+  const rand=(a,b)=>Math.random()*(b-a)+a;
+  const choice=a=>a[(Math.random()*a.length)|0];
+
+  // --- audio (simple) -------------------------------------------------------
+  const SFX={
+    ctx:null, mute:false,
+    init(){ try{ this.ctx=new (window.AudioContext||window.webkitAudioContext)(); }catch(e){} },
+    beep(type='sine',freq=440,dur=0.06,vol=0.2){ if(this.mute||!this.ctx) return; const o=this.ctx.createOscillator(); const g=this.ctx.createGain(); o.type=type; o.frequency.value=freq; g.gain.value=vol; o.connect(g); g.connect(this.ctx.destination); const t=this.ctx.currentTime; o.start(t); o.stop(t+dur); g.gain.exponentialRampToValueAtTime(0.0001,t+dur); },
+    blip(){ this.beep('square',700,0.05,0.15); },
+    hit(){ this.beep('sawtooth',160,0.12,0.25); },
+  };
+
+  // --- canvas + sizing ------------------------------------------------------
+  const canvas=document.getElementById('game');
+  const ctx=canvas.getContext('2d');
+  function resize(){
+    const dpr=window.devicePixelRatio||1; canvas.width=innerWidth*dpr; canvas.height=innerHeight*dpr; ctx.setTransform(dpr,0,0,dpr,0,0);
+  }
+  addEventListener('resize',resize,{passive:true}); resize();
+
+  // --- input ----------------------------------------------------------------
+  let justPressed=false; let isPressed=false;
+  function press(){ isPressed=true; justPressed=true; }
+  function release(){ isPressed=false; }
+  addEventListener('pointerdown',e=>{ press(); e.preventDefault(); },{passive:false});
+  addEventListener('pointerup',release,{passive:true});
+  addEventListener('keydown',e=>{ if(e.code==='Space' || e.code==='ArrowUp') press(); });
+  addEventListener('keyup',e=>{ if(e.code==='Space' || e.code==='ArrowUp') release(); });
+
+  // --- game state -----------------------------------------------------------
+  const menuEl=document.getElementById('menu');
+  const scoreEl=document.getElementById('score');
+  const bestEl=document.getElementById('best');
+  const muteBtn=document.getElementById('muteBtn');
+  const BEST_KEY='dashlanes_best';
+  let best=parseInt(localStorage.getItem(BEST_KEY)||'0',10); bestEl.textContent='BEST '+best;
+  muteBtn.onclick=()=>{ SFX.mute=!SFX.mute; muteBtn.textContent=SFX.mute?'🔇':'🔊'; };
+
+  const lanes=3; // middle is 1 (0..2)
+  const laneX=i=> (innerWidth*(0.2 + 0.3*i));
+
+  const player={ lane:1, x:0, y:0, w:26, h:26, vy:0 };
+  let speed=220; // px/sec (world)
+  let spawnEvery=0.9; // seconds
+  let spawnTimer=0;
+  const obstacles=[]; // {lane,y,w,h}
+  let score=0; let running=false; let dead=false;
+
+  function reset(){
+    obstacles.length=0; score=0; speed=220; spawnEvery=0.9; spawnTimer=0; dead=false; justPressed=false; isPressed=false;
+    player.lane=1; player.y=innerHeight-140; player.x=laneX(player.lane)-player.w/2; SFX.blip();
+  }
+
+  function start(){ running=true; menuEl.style.display='none'; reset(); }
+  function gameOver(){ dead=true; running=false; SFX.hit(); best=Math.max(best,score); localStorage.setItem(BEST_KEY,best); bestEl.textContent='BEST '+best; menuEl.style.display='grid'; menuEl.querySelector('.hint').textContent='Game over · Tap to retry'; }
+  menuEl.addEventListener('pointerdown',()=>{ start(); },{passive:true});
+
+  // --- spawn logic ----------------------------------------------------------
+  function spawn(){
+    const lane = (Math.random()*lanes)|0;
+    const w=26, h=26; const y=-h; // top
+    obstacles.push({ lane, y, w, h });
+  }
+
+  // --- update/draw ----------------------------------------------------------
+  let last=performance.now();
+  function loop(t){
+    const dt=clamp((t-last)/1000,0,0.033); last=t; requestAnimationFrame(loop);
+    ctx.clearRect(0,0,innerWidth,innerHeight);
+
+    // background grid
+    drawBg();
+
+    if(running){ update(dt); draw(); } else { draw(); drawMenu(); }
+    justPressed=false; // reset edge trigger
+  }
+  requestAnimationFrame(loop);
+
+  function update(dt){
+    // input: switch lanes on new tap
+    if(justPressed){ player.lane = (player.lane+1)%lanes; SFX.blip(); }
+    player.x=laneX(player.lane)-player.w/2;
+
+    // spawn + move obstacles
+    spawnTimer+=dt; if(spawnTimer>=spawnEvery){ spawnTimer=0; spawn(); spawnEvery=clamp(spawnEvery*0.995,0.45,1); speed=Math.min(speed+1.5,500); }
+    for(const o of obstacles){ o.y+=speed*dt; }
+    // recycle + score when pass player
+    for(let i=obstacles.length-1;i>=0;i--){ const o=obstacles[i]; if(o.y>innerHeight+40){ obstacles.splice(i,1); score++; scoreEl.textContent=score; } }
+
+    // collide
+    for(const o of obstacles){ if(o.lane===player.lane){ if(AABB(player,o)){ gameOver(); break; } } }
+  }
+
+  function draw(){
+    // lanes
+    ctx.globalAlpha=0.08; ctx.fillStyle='white';
+    for(let i=0;i<lanes;i++){ const x=laneX(i); ctx.fillRect(x-2,0,4,innerHeight); }
+    ctx.globalAlpha=1;
+
+    // obstacles
+    for(const o of obstacles){
+      ctx.fillStyle='#ef4444';
+      roundRect(ctx, laneX(o.lane)-o.w/2, o.y, o.w, o.h, 6, true);
+    }
+
+    // player
+    ctx.fillStyle='#22c55e';
+    roundRect(ctx, player.x, player.y, player.w, player.h, 6, true);
+  }
+
+  function drawMenu(){
+    // subtle pulse ring
+    const r=18 + Math.sin(performance.now()/600)*3;
+    ctx.strokeStyle='rgba(255,255,255,.2)'; ctx.lineWidth=3; ctx.beginPath(); ctx.arc(innerWidth/2, innerHeight*0.62, r, 0, Math.PI*2); ctx.stroke();
+  }
+
+  // --- helpers --------------------------------------------------------------
+  function AABB(a,b){ return !(a.x+a.w < laneX(b.lane)-b.w/2 || a.x > laneX(b.lane)+b.w/2 || a.y+a.h < b.y || a.y > b.y+b.h); }
+  function roundRect(ctx,x,y,w,h,r,fill){ ctx.beginPath(); ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r); ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); if(fill){ ctx.fill(); } else { ctx.stroke(); } }
+  function drawBg(){
+    // vignette
+    const g=ctx.createRadialGradient(innerWidth/2,innerHeight/2,20, innerWidth/2,innerHeight/2, Math.max(innerWidth,innerHeight));
+    g.addColorStop(0,'#0b1220'); g.addColorStop(1,'#050814'); ctx.fillStyle=g; ctx.fillRect(0,0,innerWidth,innerHeight);
+    // title when idle
+    if(!running){ ctx.fillStyle='rgba(255,255,255,.1)'; ctx.font='bold 64px system-ui,Segoe UI'; ctx.textAlign='center'; ctx.fillText('Dash Lanes', innerWidth/2, innerHeight*0.32); }
+  }
+
+  // --- boot -----------------------------------------------------------------
+  SFX.init();
+  </script>
+</body>
+</html>
