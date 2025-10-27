@@ -3,24 +3,30 @@ const ctx = canvas.getContext('2d');
 
 let innerWidth, innerHeight;
 
-function resize() {
-    const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
-    canvas.width = Math.floor(window.innerWidth * dpr);
-    canvas.height = Math.floor(window.innerHeight * dpr);
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    innerWidth = window.innerWidth;
-    innerHeight = window.innerHeight;
-    player.x = innerWidth * 0.5;
-    player.y = innerHeight * 0.5;
-}
+// player MUST exist before resize() runs
+const player = { x: 0, y: 0, vy: 0, r: 18 };
 
-window.addEventListener('resize', resize);
+function resize() {
+  const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+  canvas.width  = Math.floor(window.innerWidth * dpr);
+  canvas.height = Math.floor(window.innerHeight * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+  innerWidth  = window.innerWidth;
+  innerHeight = window.innerHeight;
+
+  // safe now
+  player.x = innerWidth * 0.5;
+  player.y = innerHeight * 0.5;
+}
+window.addEventListener('resize', resize, { passive:true });
 resize();
 
 let lastTapTime = 0;
 const DEBOUNCE_MS = 60;
 
 function handleTap() {
+    if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
     const now = Date.now();
     if (now - lastTapTime < DEBOUNCE_MS) return;
     lastTapTime = now;
@@ -36,9 +42,14 @@ function handleTap() {
 }
 
 canvas.addEventListener('pointerdown', (e) => {
-    e.preventDefault();
-    handleTap();
-});
+  e.preventDefault();
+  const x = e.clientX, y = e.clientY;
+
+  // top-left 50×50 toggles mute ONLY
+  if (x < 50 && y < 50) { toggleMute(); return; }
+
+  handleTap();
+}, { passive:false });
 
 document.addEventListener('keydown', (e) => {
     if (e.key === ' ' || e.key === 'ArrowUp') {
@@ -51,8 +62,7 @@ const GRAVITY = 1200;
 const TAP_IMPULSE = -360;
 const MAX_FALL = 680;
 const MAX_RISE = -480;
-
-const player = { x: 0, y: 0, vy: 0, r: 18 };
+const SAFE_MARGIN_Y = 64;
 
 let obstacles = [];
 let score = 0;
@@ -96,12 +106,6 @@ function toggleMute() {
     mute = !mute;
     localStorage.setItem('PZ_MUTE', mute);
 }
-
-canvas.addEventListener('pointerdown', (e) => {
-    if (state === 'playing' && e.clientX < 50 && e.clientY < 50) {
-        toggleMute();
-    }
-});
 
 let starsA = [];
 let starsB = [];
@@ -166,11 +170,20 @@ function drawTrail() {
     ctx.globalAlpha = 1;
 }
 
+function roundRectPath(x,y,w,h,r){
+  ctx.beginPath();
+  ctx.moveTo(x+r, y);
+  ctx.arcTo(x+w,y, x+w,y+h, r);
+  ctx.arcTo(x+w,y+h, x,y+h, r);
+  ctx.arcTo(x,y+h, x,y, r);
+  ctx.arcTo(x,y, x+w,y, r);
+  ctx.closePath();
+}
+
 function drawUFO() {
     // Saucer rim
     ctx.fillStyle = '#aaa';
-    ctx.beginPath();
-    ctx.roundRect(player.x - 20, player.y - 4, 40, 8, 4);
+    roundRectPath(player.x - 20, player.y - 4, 40, 8, 4);
     ctx.fill();
     // Dome
     ctx.fillStyle = '#ccc';
@@ -192,7 +205,7 @@ function spawnObstacle() {
     const x = dir > 0 ? -width : innerWidth + width;
     const margin = 64;
     const gapY = rand(margin + gapH / 2, innerHeight - margin - gapH / 2);
-    obstacles.push({ dir, x, speed, gapY, gapH, width, seed: Math.random() * 10 });
+    obstacles.push({ dir, x, speed, gapY, gapH, width, seed: Math.random() * 10, _crossed: false });
 }
 
 function rand(min, max) {
@@ -201,56 +214,60 @@ function rand(min, max) {
 
 function updateObstacles(dt) {
     obstacles.forEach(o => {
-        const prevX = o.x;
-        o.x += o.dir * o.speed * dt;
-        o.gapY += Math.sin((t * 0.6) + o.seed) * 12 * dt;
         const lineX = innerWidth * 0.5;
-        if ((prevX - lineX) * (o.x - lineX) <= 0 && prevX !== o.x) {
-            const gapTop = o.gapY - o.gapH / 2;
-            const gapBottom = o.gapY + o.gapH / 2;
-            if (player.y >= gapTop && player.y <= gapBottom) {
-                score++;
-                playSound('pass');
-                if (score > best) {
-                    best = score;
-                    localStorage.setItem('PZ_BEST_V1', best);
-                }
-                if (score % 5 === 0) {
-                    speed = Math.min(520, speed + 8);
-                    spawnEvery = Math.max(0.72, spawnEvery - 0.02);
-                    gapH = Math.max(90, gapH - 4);
-                }
-            } else {
-                gameOver();
-            }
+
+        // before moving:
+        const prevCenter = o.x + (o.dir > 0 ? o.width * 0.5 : -o.width * 0.5);
+
+        // move
+        o.x += o.dir * o.speed * dt;
+
+        // gentle drift + clamp
+        o.gapY += Math.sin((t * 0.6) + o.seed) * 12 * dt;
+        const margin = SAFE_MARGIN_Y + o.gapH/2;
+        o.gapY = Math.max(margin, Math.min(innerHeight - margin, o.gapY));
+
+        const center = o.x + (o.dir > 0 ? o.width * 0.5 : -o.width * 0.5);
+
+        if (!o._crossed && Math.sign(prevCenter - lineX) !== Math.sign(center - lineX)) {
+          o._crossed = true;
+          const gapTop = o.gapY - o.gapH/2, gapBot = o.gapY + o.gapH/2;
+          if (player.y >= gapTop && player.y <= gapBot) {
+            score++; playSound('pass');
+            if (score > best) { best = score; localStorage.setItem('PZ_BEST_V1', best); }
+            if (score % 5 === 0) { speed = Math.min(520, speed + 8); spawnEvery = Math.max(0.72, spawnEvery - 0.02); gapH = Math.max(90, gapH - 4); }
+          } else {
+            gameOver();
+          }
         }
     });
     obstacles = obstacles.filter(o => {
-        if (o.dir > 0) return o.x < innerWidth + o.width;
-        else return o.x > -o.width;
+        if (o.dir > 0) return o.x < innerWidth;
+        else return o.x > 0;
     });
 }
 
 function drawObstacles() {
-    const lineX = innerWidth * 0.5;
     obstacles.forEach(o => {
+        let barLeft = o.x;
+        if (o.dir < 0) barLeft = o.x - o.width;
         const top = 0;
         const bottom = innerHeight;
         const gapTop = o.gapY - o.gapH / 2;
         const gapBottom = o.gapY + o.gapH / 2;
         ctx.fillStyle = '#9aa3ad';
         // Top bar
-        ctx.fillRect(o.x, top, o.width, gapTop - top);
+        ctx.fillRect(barLeft, top, o.width, gapTop - top);
         // Bottom bar
-        ctx.fillRect(o.x, gapBottom, o.width, bottom - gapBottom);
+        ctx.fillRect(barLeft, gapBottom, o.width, bottom - gapBottom);
         // Highlight
         ctx.strokeStyle = '#fff';
         ctx.globalAlpha = 0.3;
         ctx.beginPath();
-        ctx.moveTo(o.x + 4, gapTop);
-        ctx.lineTo(o.x + o.width - 4, gapTop);
-        ctx.moveTo(o.x + 4, gapBottom);
-        ctx.lineTo(o.x + o.width - 4, gapBottom);
+        ctx.moveTo(barLeft + 4, gapTop);
+        ctx.lineTo(barLeft + o.width - 4, gapTop);
+        ctx.moveTo(barLeft + 4, gapBottom);
+        ctx.lineTo(barLeft + o.width - 4, gapBottom);
         ctx.stroke();
         ctx.globalAlpha = 1;
     });
