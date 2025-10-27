@@ -1,3 +1,4 @@
+```html
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -184,7 +185,7 @@
       ctx.fill();
 
       // flame (stronger when tapping / going up)
-      const up = Math.max(0, -player.vy);     // only when moving up
+      const up = Math.max(0, -player.vy);      // only when moving up
       const flame = Math.min(28, 8 + up * 0.06);
       if (flame > 0.5) {
         const jitter = (Math.sin(performance.now()*0.02) * 2);
@@ -242,7 +243,7 @@
 
     function updateObstacles(dt){
       const lineX = cssW * 0.5;
-      for (let i=obstacles.length-1; i>=0; i++){
+      for (let i=obstacles.length-1; i>=0; i--){
         const o = obstacles[i];
         const prevCenter = o.x + (o.dir > 0 ? o.width*0.5 : -o.width*0.5);
         o.x += o.dir * o.speed * dt;
@@ -265,14 +266,23 @@
     }
 
     function drawObstacles() {
-      ctx.fillStyle = '#888'; // Gray for space junk/obstacles
+      // Let's use the same red as the ship's fins for the obstacles
+      ctx.fillStyle = '#ff6961'; 
       for (const o of obstacles) {
         const gapTop = o.gapY - o.gapH / 2;
-        const gapBot = o.gapY + o.gapH / 2;
-        // Top section
-        ctx.fillRect(o.x, 0, o.width, gapTop);
-        // Bottom section
-        ctx.fillRect(o.x, gapBot, o.width, cssH - gapBot);
+        const gapBottom = o.gapY + o.gapH / 2;
+        
+        // Calculate the correct 'x' position for drawing the rect
+        // If dir > 0 (from left), x is the left edge
+        // If dir < 0 (from right), x is the right edge, so we subtract width
+        const x = (o.dir > 0) ? o.x : (o.x - o.width);
+        const w = o.width;
+
+        // Draw top part
+        ctx.fillRect(x, 0, w, gapTop);
+        
+        // Draw bottom part
+        ctx.fillRect(x, gapBottom, w, cssH - gapBottom);
       }
     }
 
@@ -341,3 +351,4 @@
   </script>
 </body>
 </html>
+```
