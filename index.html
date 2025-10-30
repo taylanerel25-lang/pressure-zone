@@ -67,6 +67,8 @@
     junkImages[1].src = 'https://i.imgur.com/YApyVR6.png';
     junkImages[2] = new Image();
     junkImages[2].src = 'https://i.imgur.com/kp7RKJA.png';
+    let shipImage = new Image();
+    shipImage.src = 'https://i.imgur.com/pXg798a.png';
     // ---------- input ----------
     let isBoosting = false;
     let pressed = new Set();
@@ -194,10 +196,11 @@ let levelDisplayAlpha = 0;
 function rand(a,b){ return Math.random()*(b-a)+a; }
 function randInt(a,b){ return (Math.random()*(b-a+1) + a)|0; }
 function rectCircleOverlap(rx, ry, rw, rh, cx, cy, cr) {
-  rx += rw * 0.15;
-  ry += rh * 0.15;
-  rw *= 0.7;
-  rh *= 0.7;
+  const scale = 0.8;
+  rx += (rw - rw * scale) / 2;
+  ry += (rh - rh * scale) / 2;
+  rw *= scale;
+  rh *= scale;
   const dx = cx - Math.max(rx, Math.min(cx, rx + rw));
   const dy = cy - Math.max(ry, Math.min(cy, ry + rh));
   return (dx * dx + dy * dy) <= (cr * cr);
@@ -261,7 +264,7 @@ function drawObstacles() {
     if (o.dir < 0) {
       ctx.translate(baseX + o.width / 2, 0);
       ctx.scale(-1, 1);
-      ctx.translate(-(baseX + o.width / 2, 0);
+      ctx.translate(-(baseX + o.width / 2), 0);
     }
     ctx.drawImage(junkImages[o.imageIndex], baseX, py, o.width, o.height);
     ctx.restore();
