@@ -229,6 +229,9 @@ let flashAlpha = 0;
 const flashDuration = 200;
 let flashStart = 0;
 let t = 0;
+let currentLevel = 1;
+let levelDisplayTimer = 0;
+let levelDisplayAlpha = 0;
 function rand(a,b){ return Math.random()*(b-a)+a; }
 function randInt(a,b){ return (Math.random()*(b-a+1) + a)|0; }
 function rectCircleOverlap(rx, ry, rw, rh, cx, cy, cr) {
@@ -280,7 +283,13 @@ function updateObstacles(dt){
       o._crossed = true;
       score++; playSound('pass');
       if (score > best) { best = score; try{ localStorage.setItem('PZ_BEST_V1', best); }catch{} }
-      if (score % 5 === 0) { speed = Math.min(300, speed + 5); spawnEvery = Math.max(1.0, spawnEvery - 0.01); }
+      if (score % 10 === 0) {
+        currentLevel++;
+        levelDisplayTimer = 2; // display for 2 seconds
+        levelDisplayAlpha = 1;
+        speed = Math.min(300, speed + 10);
+        spawnEvery = Math.max(1.0, spawnEvery - 0.05);
+      }
     }
     // Despawn when gone
     if (obsRight < -2 || obsLeft > cssW + 2) obstacles.splice(i, 1);
@@ -316,6 +325,23 @@ function drawObstacles() {
     function gameOver(){ state='gameover'; playSound('die'); flashStart=performance.now(); flashAlpha=0.35; isBoosting = false; pressed.clear(); }
     function updateFlash(){ if (flashAlpha>0){ const e=performance.now()-flashStart; flashAlpha=0.35*(1-e/flashDuration); if (flashAlpha<0) flashAlpha=0; } }
     function drawFlash(){ if (flashAlpha<=0) return; ctx.fillStyle='#fff'; ctx.globalAlpha=flashAlpha; ctx.fillRect(0,0,cssW,cssH); ctx.globalAlpha=1; }
+    function updateLevelDisplay(dt) {
+      if (levelDisplayTimer > 0) {
+        levelDisplayTimer -= dt;
+        levelDisplayAlpha = Math.max(0, levelDisplayTimer / 0.5); // fade out in last 0.5s
+        if (levelDisplayTimer <= 0) levelDisplayAlpha = 0;
+      }
+    }
+    function drawLevelDisplay() {
+      if (levelDisplayAlpha > 0) {
+        ctx.globalAlpha = levelDisplayAlpha;
+        ctx.fillStyle = '#fff';
+        ctx.font = 'bold 48px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText(`Level ${currentLevel}`, cssW / 2, cssH / 2 - 24);
+        ctx.globalAlpha = 1;
+      }
+    }
     function drawHUD(){
       const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
       const HUD_Y = isMobile ? 40 : 12;
@@ -358,7 +384,7 @@ function drawObstacles() {
     }
     function startGame(){ state='playing'; spawnTimer = spawnEvery * 0.6; }
     function resetGame(){
-      obstacles=[]; score=0; spawnTimer=0; speed=150; spawnEvery=1.5;
+      obstacles=[]; score=0; spawnTimer=0; speed=150; spawnEvery=1.5; currentLevel=1; levelDisplayTimer=0; levelDisplayAlpha=0;
       player.y = cssH*0.5; player.vy=0; trail=[]; flashAlpha=0; isBoosting = false; pressed.clear();
     }
     // ---------- loop ----------
@@ -376,7 +402,7 @@ function drawObstacles() {
           player.y += player.vy * dt;
           if (player.y - player.r < 0 || player.y + player.r > cssH) gameOver();
           spawnTimer += dt; if (spawnTimer >= spawnEvery){ spawnTimer = 0; spawnObstacle(); }
-          updateObstacles(dt); updateTrail();
+          updateObstacles(dt); updateTrail(); updateLevelDisplay(dt);
         }
         // draw
         ctx.fillStyle='#000'; ctx.fillRect(0,0,cssW,cssH);
@@ -385,6 +411,7 @@ function drawObstacles() {
         drawHUD();
         if (state!=='playing') drawOverlay();
         updateFlash(); drawFlash();
+        drawLevelDisplay();
         // draw the ship LAST so it appears above overlays
         drawShip();
       }catch(e){ console.error('Loop error', e); }
