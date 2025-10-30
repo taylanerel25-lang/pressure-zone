@@ -27,7 +27,7 @@
     if (!ctx) { document.body.innerHTML = '<p style="color:#fff;text-align:center">Canvas unsupported</p>'; throw new Error('No 2D ctx'); }
     ctx.textBaseline = 'top';
     let cssW = 0, cssH = 0;
-    const player = { x: 0, y: 0, vy: 0, r: 40 };
+    const player = { x: 0, y: 0, vy: 0, r: 30 };
     // stars declared early
     let starsA = [], starsB = [];
     function resize() {
@@ -67,8 +67,6 @@
     junkImages[1].src = 'https://i.imgur.com/YApyVR6.png';
     junkImages[2] = new Image();
     junkImages[2].src = 'https://i.imgur.com/kp7RKJA.png';
-    let shipImage = new Image();
-    shipImage.src = 'https://i.imgur.com/pXg798a.png';
     // ---------- input ----------
     let isBoosting = false;
     let pressed = new Set();
@@ -196,6 +194,10 @@ let levelDisplayAlpha = 0;
 function rand(a,b){ return Math.random()*(b-a)+a; }
 function randInt(a,b){ return (Math.random()*(b-a+1) + a)|0; }
 function rectCircleOverlap(rx, ry, rw, rh, cx, cy, cr) {
+  rx += rw * 0.15;
+  ry += rh * 0.15;
+  rw *= 0.7;
+  rh *= 0.7;
   const dx = cx - Math.max(rx, Math.min(cx, rx + rw));
   const dy = cy - Math.max(ry, Math.min(cy, ry + rh));
   return (dx * dx + dy * dy) <= (cr * cr);
@@ -203,8 +205,9 @@ function rectCircleOverlap(rx, ry, rw, rh, cx, cy, cr) {
 function spawnObstacle(){
   const dir = Math.random() < 0.5 ? 1 : -1;
   const imageIndex = randInt(0, 2);
-  const width = randInt(100, 250);
-  const height = width;
+  const width = randInt(80, 200);
+  const aspect = [0.8, 0.6, 1.0][imageIndex];
+  const height = width * aspect;
   const x = dir > 0 ? -width : cssW + width;
   const margin = 32;
   const y = rand(margin + height/2, cssH - margin - height/2);
@@ -258,7 +261,7 @@ function drawObstacles() {
     if (o.dir < 0) {
       ctx.translate(baseX + o.width / 2, 0);
       ctx.scale(-1, 1);
-      ctx.translate(-(baseX + o.width / 2), 0);
+      ctx.translate(-(baseX + o.width / 2, 0);
     }
     ctx.drawImage(junkImages[o.imageIndex], baseX, py, o.width, o.height);
     ctx.restore();
