@@ -60,6 +60,8 @@
     addEventListener('resize', resize, { passive: true });
     addEventListener('orientationchange', () => { setTimeout(resize, 100); isBoosting = false; pressed.clear(); });
     resize();
+    let junkImage = new Image();
+    junkImage.src = 'https://i.imgur.com/OzQ05Ho.png';
     // ---------- input ----------
     let isBoosting = false;
     let pressed = new Set();
@@ -225,7 +227,6 @@ let state = 'menu';
 let spawnTimer = 0;
 let speed = 150;
 let spawnEvery = 1.5;
-let obstaclesPerSpawn = 1;
 let flashAlpha = 0;
 const flashDuration = 200;
 let flashStart = 0;
@@ -242,21 +243,13 @@ function rectCircleOverlap(rx, ry, rw, rh, cx, cy, cr) {
 }
 function spawnObstacle(){
   const dir = Math.random() < 0.5 ? 1 : -1;
-  const isHero = Math.random() < 0.6;
-  let width, height;
-  if (isHero) {
-    width = randInt(36, 92);
-    height = randInt(10, 24);
-  } else {
-    width = randInt(14, 60);
-    height = randInt(8, 28);
-  }
+  const width = randInt(60, 160);
+  const height = width / 2;
   const x = dir > 0 ? -width : cssW + width;
   const margin = 32;
   const y = rand(margin + height/2, cssH - margin - height/2);
-  const hl = !isHero && Math.random() < 0.2;
   const seed = Math.random()*10;
-  obstacles.push({ dir, x, y, width, height, speed, seed, _crossed: false, hero: isHero, hl });
+  obstacles.push({ dir, x, y, width, height, speed, seed, _crossed: false });
 }
 function updateObstacles(dt){
   const playerRight = player.x + player.r;
@@ -298,16 +291,121 @@ function updateObstacles(dt){
 }
 function drawObstacles() {
   for (const o of obstacles) {
-    const baseX = (o.dir > 0) ? o.x : o.x - o.width;
+    let baseX = (o.dir > 0) ? o.x : o.x - o.width;
     const py = o.y - o.height / 2;
     if (baseX > cssW || baseX + o.width < 0) continue; // cull off-screen
-    if (o.hero) {
-      ctx.fillStyle = '#cfd6e3';
-      ctx.fillRect(baseX, py, o.width, o.height);
-      ctx.strokeStyle = 'rgba(255,255,255,.25)';
-      ctx.strokeRect(baseX, py, o.width, o.height);
-      for (let k=1;k<3;k++){
-        ctx.beginPath();
-        ctx.moveTo(baseX + k*(o.width/3), py-6);
-        ctx.lineTo(baseX + k*(o.width/3), py + o.height + 6);
-        ctx.stroke
+    ctx.save();
+    if (o.dir < 0) {
+      ctx.translate(baseX + o.width / 2, 0);
+      ctx.scale(-1, 1);
+      ctx.translate(-(baseX + o.width / 2), 0);
+    }
+    ctx.drawImage(junkImage, baseX, py, o.width, o.height);
+    ctx.restore();
+  }
+}
+    // ---------- game flow / HUD ----------
+    function gameOver(){ state='gameover'; playSound('die'); flashStart=performance.now(); flashAlpha=0.35; isBoosting = false; pressed.clear(); }
+    function updateFlash(){ if (flashAlpha>0){ const e=performance.now()-flashStart; flashAlpha=0.35*(1-e/flashDuration); if (flashAlpha<0) flashAlpha=0; } }
+    function drawFlash(){ if (flashAlpha<=0) return; ctx.fillStyle='#fff'; ctx.globalAlpha=flashAlpha; ctx.fillRect(0,0,cssW,cssH); ctx.globalAlpha=1; }
+    function updateLevelDisplay(dt) {
+      if (levelDisplayTimer > 0) {
+        levelDisplayTimer -= dt;
+        levelDisplayAlpha = Math.max(0, levelDisplayTimer / 0.5); // fade out in last 0.5s
+        if (levelDisplayTimer <= 0) levelDisplayAlpha = 0;
+      }
+    }
+    function drawLevelDisplay() {
+      if (levelDisplayAlpha > 0) {
+        ctx.globalAlpha = levelDisplayAlpha;
+        ctx.fillStyle = '#fff';
+        ctx.font = 'bold 48px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText(`Level ${currentLevel}`, cssW / 2, cssH / 2 - 24);
+        ctx.globalAlpha = 1;
+      }
+    }
+    function drawHUD(){
+      const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+      const HUD_Y = isMobile ? 40 : 12;
+      const isSmallScreen = cssW < 600;
+      ctx.font= (isSmallScreen ? 'bold 32px' : 'bold 48px') + ' monospace'; ctx.fillStyle='#fff'; ctx.textAlign='center';
+      ctx.fillText(String(score), Math.floor(cssW*0.5), HUD_Y);
+      ctx.font= (isSmallScreen ? '18px' : '24px') + ' monospace'; ctx.textAlign='right'; ctx.fillText(`BEST ${best}`, cssW-20, HUD_Y);
+      ctx.textAlign='left'; ctx.fillText(mute?'🔇':'🔊', 20, HUD_Y);
+    }
+    function drawOverlay(){
+      if (state==='menu'){
+        ctx.fillStyle='rgba(0,0,0,.35)'; ctx.fillRect(0,0,cssW,cssH);
+      }
+      ctx.fillStyle='#fff'; ctx.textAlign='center';
+      if (state==='menu'){
+        // No dim overlay for retro look
+        ctx.font = '20px monospace';
+        ctx.fillText('1P', cssW*0.15, 20);
+        ctx.fillText('00', cssW*0.15, 45);
+        ctx.fillText('HIGH SCORE', cssW*0.5, 20);
+        ctx.fillText(best, cssW*0.5, 45);
+        ctx.fillText('2P', cssW*0.85, 20);
+        ctx.fillText('00', cssW*0.85, 45);
+        ctx.fillStyle = '#ff8c00';
+        ctx.font = 'bold 48px monospace';
+        ctx.fillText('PRESS START', cssW*0.5, cssH*0.35);
+        ctx.fillStyle = '#fff';
+        ctx.font = '24px monospace';
+        ctx.fillText('INSERT COIN TO CONTINUE', cssW*0.5, cssH*0.45);
+        ctx.font = '20px monospace';
+        ctx.fillText('CREDIT 00', cssW*0.85, cssH - 30);
+        ctx.fillText('Hold to rise · Release to fall · Dodge the junk', cssW*0.5, cssH*0.55);
+      } else if (state==='gameover'){
+        ctx.fillStyle='rgba(0,0,0,0.7)'; ctx.fillRect(0,0,cssW,cssH);
+        ctx.fillStyle='#fff';
+        ctx.font='bold 48px monospace'; ctx.fillText(String(score), cssW*0.5, cssH*0.4);
+        ctx.font='24px monospace'; ctx.fillText(`BEST ${best}`, cssW*0.5, cssH*0.47);
+        ctx.fillText('Tap to retry', cssW*0.5, cssH*0.54);
+      }
+    }
+    function startGame(){ state='playing'; spawnTimer = spawnEvery * 0.6; }
+    function resetGame(){
+      obstacles=[]; score=0; spawnTimer=0; speed=150; spawnEvery=1.5; currentLevel=1; levelDisplayTimer=0; levelDisplayAlpha=0;
+      player.y = cssH*0.5; player.vy=0; trail=[]; flashAlpha=0; isBoosting = false; pressed.clear();
+    }
+    // ---------- loop ----------
+    let lastTime = performance.now();
+    function loop(now){
+      try{
+        let dt = (now - lastTime)/1000; lastTime = now; dt = Math.min(0.033, Math.max(0, dt)); t += dt;
+        // update
+        if (state==='playing'){
+          player.vy += GRAVITY * dt;
+          if (isBoosting) player.vy -= BOOST_ACCEL * dt;
+          player.vy *= AIR_DRAG;
+          if (player.vy > MAX_FALL) player.vy = MAX_FALL;
+          if (player.vy < MAX_RISE) player.vy = MAX_RISE;
+          player.y += player.vy * dt;
+          if (player.y - player.r < 0 || player.y + player.r > cssH) gameOver();
+          spawnTimer += dt; if (spawnTimer >= spawnEvery){ spawnTimer = 0; spawnObstacle(); }
+          updateObstacles(dt); updateTrail(); updateLevelDisplay(dt);
+        }
+        // draw
+        ctx.fillStyle='#000'; ctx.fillRect(0,0,cssW,cssH);
+        updateStars(dt); drawStars(starsA,0.5); drawStars(starsB,0.9);
+        drawObstacles(); drawTrail();
+        drawHUD();
+        if (state!=='playing') drawOverlay();
+        updateFlash(); drawFlash();
+        drawLevelDisplay();
+        // draw the ship LAST so it appears above overlays
+        drawShip();
+      }catch(e){ console.error('Loop error', e); }
+      requestAnimationFrame(loop);
+    }
+    requestAnimationFrame(loop);
+  </script>
+  <script>
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('sw.js').catch(()=>{});
+  }
+  </script>
+</body>
+</html>
