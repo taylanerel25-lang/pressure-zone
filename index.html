@@ -225,6 +225,7 @@ let state = 'menu';
 let spawnTimer = 0;
 let speed = 150;
 let spawnEvery = 1.5;
+let obstaclesPerSpawn = 1;
 let flashAlpha = 0;
 const flashDuration = 200;
 let flashStart = 0;
@@ -289,6 +290,7 @@ function updateObstacles(dt){
         levelDisplayAlpha = 1;
         speed = Math.min(300, speed + 10);
         spawnEvery = Math.max(1.0, spawnEvery - 0.05);
+        obstaclesPerSpawn++;
       }
     }
     // Despawn when gone
@@ -384,7 +386,7 @@ function drawObstacles() {
     }
     function startGame(){ state='playing'; spawnTimer = spawnEvery * 0.6; }
     function resetGame(){
-      obstacles=[]; score=0; spawnTimer=0; speed=150; spawnEvery=1.5; currentLevel=1; levelDisplayTimer=0; levelDisplayAlpha=0;
+      obstacles=[]; score=0; spawnTimer=0; speed=150; spawnEvery=1.5; currentLevel=1; levelDisplayTimer=0; levelDisplayAlpha=0; obstaclesPerSpawn=1;
       player.y = cssH*0.5; player.vy=0; trail=[]; flashAlpha=0; isBoosting = false; pressed.clear();
     }
     // ---------- loop ----------
@@ -401,7 +403,7 @@ function drawObstacles() {
           if (player.vy < MAX_RISE) player.vy = MAX_RISE;
           player.y += player.vy * dt;
           if (player.y - player.r < 0 || player.y + player.r > cssH) gameOver();
-          spawnTimer += dt; if (spawnTimer >= spawnEvery){ spawnTimer = 0; spawnObstacle(); }
+          spawnTimer += dt; if (spawnTimer >= spawnEvery){ spawnTimer = 0; for(let i=0; i<obstaclesPerSpawn; i++) spawnObstacle(); }
           updateObstacles(dt); updateTrail(); updateLevelDisplay(dt);
         }
         // draw
