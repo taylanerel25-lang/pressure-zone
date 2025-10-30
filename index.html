@@ -60,8 +60,13 @@
     addEventListener('resize', resize, { passive: true });
     addEventListener('orientationchange', () => { setTimeout(resize, 100); isBoosting = false; pressed.clear(); });
     resize();
-    let junkImage = new Image();
-    junkImage.src = 'https://i.imgur.com/OzQ05Ho.png';
+    let junkImages = [];
+    junkImages[0] = new Image();
+    junkImages[0].src = 'https://i.imgur.com/LhXYIPD.png';
+    junkImages[1] = new Image();
+    junkImages[1].src = 'https://i.imgur.com/YApyVR6.png';
+    junkImages[2] = new Image();
+    junkImages[2].src = 'https://i.imgur.com/kp7RKJA.png';
     // ---------- input ----------
     let isBoosting = false;
     let pressed = new Set();
@@ -243,13 +248,14 @@ function rectCircleOverlap(rx, ry, rw, rh, cx, cy, cr) {
 }
 function spawnObstacle(){
   const dir = Math.random() < 0.5 ? 1 : -1;
-  const width = randInt(60, 160);
+  const imageIndex = randInt(0, 2);
+  const width = randInt(80, 200);
   const height = width / 2;
   const x = dir > 0 ? -width : cssW + width;
   const margin = 32;
   const y = rand(margin + height/2, cssH - margin - height/2);
   const seed = Math.random()*10;
-  obstacles.push({ dir, x, y, width, height, speed, seed, _crossed: false });
+  obstacles.push({ dir, x, y, width, height, speed, seed, _crossed: false, imageIndex });
 }
 function updateObstacles(dt){
   const playerRight = player.x + player.r;
@@ -300,7 +306,7 @@ function drawObstacles() {
       ctx.scale(-1, 1);
       ctx.translate(-(baseX + o.width / 2), 0);
     }
-    ctx.drawImage(junkImage, baseX, py, o.width, o.height);
+    ctx.drawImage(junkImages[o.imageIndex], baseX, py, o.width, o.height);
     ctx.restore();
   }
 }
