@@ -223,8 +223,8 @@ let score = 0;
 let best = 0; try { best = parseInt(localStorage.getItem('PZ_BEST_V1')||'0',10);}catch{}
 let state = 'menu';
 let spawnTimer = 0;
-let speed = 200;
-let spawnEvery = 1.2;
+let speed = 150;
+let spawnEvery = 1.5;
 let flashAlpha = 0;
 const flashDuration = 200;
 let flashStart = 0;
@@ -280,7 +280,7 @@ function updateObstacles(dt){
       o._crossed = true;
       score++; playSound('pass');
       if (score > best) { best = score; try{ localStorage.setItem('PZ_BEST_V1', best); }catch{} }
-      if (score % 5 === 0) { speed = Math.min(400, speed + 8); spawnEvery = Math.max(0.8, spawnEvery - 0.02); }
+      if (score % 5 === 0) { speed = Math.min(300, speed + 5); spawnEvery = Math.max(1.0, spawnEvery - 0.01); }
     }
     // Despawn when gone
     if (obsRight < -2 || obsLeft > cssW + 2) obstacles.splice(i, 1);
@@ -317,11 +317,12 @@ function drawObstacles() {
     function updateFlash(){ if (flashAlpha>0){ const e=performance.now()-flashStart; flashAlpha=0.35*(1-e/flashDuration); if (flashAlpha<0) flashAlpha=0; } }
     function drawFlash(){ if (flashAlpha<=0) return; ctx.fillStyle='#fff'; ctx.globalAlpha=flashAlpha; ctx.fillRect(0,0,cssW,cssH); ctx.globalAlpha=1; }
     function drawHUD(){
-      const HUD_Y = (/\biPhone|\biPad|\biPod/i.test(navigator.userAgent)) ? 32 : 12;
-      const isMobile = cssW < 600;
-      ctx.font= (isMobile ? 'bold 32px' : 'bold 48px') + ' monospace'; ctx.fillStyle='#fff'; ctx.textAlign='center';
+      const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+      const HUD_Y = isMobile ? 40 : 12;
+      const isSmallScreen = cssW < 600;
+      ctx.font= (isSmallScreen ? 'bold 32px' : 'bold 48px') + ' monospace'; ctx.fillStyle='#fff'; ctx.textAlign='center';
       ctx.fillText(String(score), Math.floor(cssW*0.5), HUD_Y);
-      ctx.font= (isMobile ? '18px' : '24px') + ' monospace'; ctx.textAlign='right'; ctx.fillText(`BEST ${best}`, cssW-20, HUD_Y);
+      ctx.font= (isSmallScreen ? '18px' : '24px') + ' monospace'; ctx.textAlign='right'; ctx.fillText(`BEST ${best}`, cssW-20, HUD_Y);
       ctx.textAlign='left'; ctx.fillText(mute?'🔇':'🔊', 20, HUD_Y);
     }
     function drawOverlay(){
@@ -357,7 +358,7 @@ function drawObstacles() {
     }
     function startGame(){ state='playing'; spawnTimer = spawnEvery * 0.6; }
     function resetGame(){
-      obstacles=[]; score=0; spawnTimer=0; speed=200; spawnEvery=1.2;
+      obstacles=[]; score=0; spawnTimer=0; speed=150; spawnEvery=1.5;
       player.y = cssH*0.5; player.vy=0; trail=[]; flashAlpha=0; isBoosting = false; pressed.clear();
     }
     // ---------- loop ----------
