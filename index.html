@@ -62,36 +62,44 @@
       ctx.fillText('PRESSURE ZONE — loading…', 12, 12);
     }
     addEventListener('resize', resize, { passive: true });
-    addEventListener('orientationchange', () => { setTimeout(resize, 100); isBoosting = false; });
+    addEventListener('orientationchange', () => { setTimeout(resize, 100); isBoosting = false; pressed.clear(); });
     resize();
     // ---------- input ----------
     let isBoosting = false;
+    let pressed = new Set();
     canvas.addEventListener('pointerdown', (e) => {
-      ensureAudio();
-      if (audioCtx && audioCtx.state === 'suspended') { audioCtx.resume(); }
+      ensureAudio(); if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
       e.preventDefault();
       const x = e.clientX, y = e.clientY;
       if (x < 50 && y < 50) { toggleMute(); return; }
-      if (state === 'menu' || state === 'gameover') { resetGame(); startGame(); return; }
-      if (state === 'playing') {
+
+      if (state === 'menu' || state === 'gameover') {
+        resetGame(); startGame();
+        pressed.clear(); pressed.add(e.pointerId);
         isBoosting = true;
         playSound('tap');
+        return;
       }
+
+      // playing
+      pressed.add(e.pointerId);
+      isBoosting = true;
+      playSound('tap');
     }, { passive:false });
-    canvas.addEventListener('pointerup', () => { isBoosting = false; });
-    canvas.addEventListener('pointercancel', () => { isBoosting = false; });
-    canvas.addEventListener('pointerleave', () => { isBoosting = false; }, { passive: true });
+    for (const ev of ['pointerup','pointercancel','pointerleave']) {
+      canvas.addEventListener(ev, e => {
+        pressed.delete(e.pointerId);
+        isBoosting = pressed.size > 0;
+      });
+    }
     canvas.addEventListener('contextmenu', e => e.preventDefault());
     addEventListener('keydown', (e) => {
-      ensureAudio();
-      if (audioCtx && audioCtx.state === 'suspended') { audioCtx.resume(); }
+      ensureAudio(); if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
       if (e.key === ' ' || e.key === 'ArrowUp') {
         e.preventDefault();
-        if (state === 'menu' || state === 'gameover') { resetGame(); startGame(); return; }
-        if (state === 'playing' && !isBoosting) {
-          playSound('tap');
-        }
+        if (state === 'menu' || state === 'gameover') { resetGame(); startGame(); }
         isBoosting = true;
+        playSound('tap');
       }
     });
     addEventListener('keyup', (e) => {
@@ -100,7 +108,7 @@
         isBoosting = false;
       }
     });
-    document.addEventListener('visibilitychange', () => { if (document.hidden) isBoosting = false; });
+    document.addEventListener('visibilitychange', () => { if (document.hidden) { isBoosting = false; pressed.clear(); } });
     // ---------- physics / constants ----------
     const GRAVITY = 400; // reduced for slower fall, space-like feel
     const BOOST_ACCEL = 800; // adjusted to balance with lower gravity
@@ -326,7 +334,6 @@
             ctx.strokeStyle = 'rgba(255,255,255,.25)';
             ctx.strokeRect(p.x, p.y, p.w, p.h);
             // little solar struts
-            const s = Math.max(6, Math.min(14, (p.w/6)|0));
             for (let k=1;k<3;k++){
               ctx.beginPath();
               ctx.moveTo(p.x + k*(p.w/3), p.y-6);
@@ -348,7 +355,7 @@
       }
     }
     // ---------- game flow / HUD ----------
-    function gameOver(){ state='gameover'; playSound('die'); flashStart=performance.now(); flashAlpha=0.35; isBoosting = false; }
+    function gameOver(){ state='gameover'; playSound('die'); flashStart=performance.now(); flashAlpha=0.35; isBoosting = false; pressed.clear(); }
     function updateFlash(){ if (flashAlpha>0){ const e=performance.now()-flashStart; flashAlpha=0.35*(1-e/flashDuration); if (flashAlpha<0) flashAlpha=0; } }
     function drawFlash(){ if (flashAlpha<=0) return; ctx.fillStyle='#fff'; ctx.globalAlpha=flashAlpha; ctx.fillRect(0,0,cssW,cssH); ctx.globalAlpha=1; }
     function drawHUD(){
@@ -358,6 +365,9 @@
       ctx.textAlign='left'; ctx.fillText(mute?'🔇':'🔊', 20, 12);
     }
     function drawOverlay(){
+      if (state==='menu'){
+        ctx.fillStyle='rgba(0,0,0,.35)'; ctx.fillRect(0,0,cssW,cssH);
+      }
       ctx.fillStyle='#fff'; ctx.textAlign='center';
       if (state==='menu'){
         // No dim overlay for retro look
@@ -388,7 +398,7 @@
     function startGame(){ state='playing'; spawnTimer = spawnEvery * 0.6; }
     function resetGame(){
       obstacles=[]; score=0; spawnTimer=0; speed=280; spawnEvery=1.25; gapH=Math.max(140, cssH*0.22);
-      player.y = cssH*0.5; player.vy=0; trail=[]; flashAlpha=0; isBoosting = false;
+      player.y = cssH*0.5; player.vy=0; trail=[]; flashAlpha=0; isBoosting = false; pressed.clear();
     }
     // ---------- loop ----------
     let lastTime = performance.now();
