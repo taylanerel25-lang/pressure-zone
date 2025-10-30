@@ -27,7 +27,7 @@
     if (!ctx) { document.body.innerHTML = '<p style="color:#fff;text-align:center">Canvas unsupported</p>'; throw new Error('No 2D ctx'); }
     ctx.textBaseline = 'top';
     let cssW = 0, cssH = 0;
-    const player = { x: 0, y: 0, vy: 0, r: 18 };
+    const player = { x: 0, y: 0, vy: 0, r: 40 };
     // stars declared early
     let starsA = [], starsB = [];
     function resize() {
@@ -67,6 +67,8 @@
     junkImages[1].src = 'https://i.imgur.com/YApyVR6.png';
     junkImages[2] = new Image();
     junkImages[2].src = 'https://i.imgur.com/kp7RKJA.png';
+    let shipImage = new Image();
+    shipImage.src = 'https://i.imgur.com/pXg798a.png';
     // ---------- input ----------
     let isBoosting = false;
     let pressed = new Set();
@@ -150,79 +152,31 @@
       ctx.beginPath(); ctx.moveTo(player.x, trail[0]); for (let i=1;i<trail.length;i++) ctx.lineTo(player.x, trail[i]); ctx.stroke(); ctx.globalAlpha = 1;
     }
     function drawShip() {
-      // tilt depends on vertical speed: nose up when rising, down when falling
       const tilt = Math.max(-0.6, Math.min(0.6, -player.vy / 700));
       ctx.save();
       ctx.translate(player.x, player.y);
       ctx.rotate(tilt);
-      // sizes
-      const w = 36, h = 48, r = 10;
-      // body
-      ctx.fillStyle = '#d9dde2';
-      roundRectPath(-w/2, -h/2 + 6, w, h - 12, r);
-      ctx.fill();
-      // nose cone
-      ctx.beginPath();
-      ctx.moveTo(0, -h/2 - 8);
-      ctx.lineTo(-w*0.45, -h/2 + 10);
-      ctx.lineTo( w*0.45, -h/2 + 10);
-      ctx.closePath();
-      ctx.fillStyle = '#ffffff';
-      ctx.fill();
-      // window
-      ctx.beginPath();
-      ctx.arc(0, -6, 7, 0, Math.PI*2);
-      ctx.fillStyle = '#9cc7ff';
-      ctx.fill();
-      ctx.strokeStyle = 'rgba(255,255,255,.85)';
-      ctx.stroke();
-      // side fins
-      ctx.fillStyle = '#ff6961';
-      ctx.beginPath();
-      ctx.moveTo(-w/2, 4);
-      ctx.lineTo(-w/2 - 10, 14);
-      ctx.lineTo(-w/2 + 4, 16);
-      ctx.closePath();
-      ctx.fill();
-      ctx.beginPath();
-      ctx.moveTo(w/2, 4);
-      ctx.lineTo(w/2 + 10, 14);
-      ctx.lineTo(w/2 - 4, 16);
-      ctx.closePath();
-      ctx.fill();
-      // tail ring
-      ctx.fillStyle = '#b8c0c7';
-      roundRectPath(-w*0.35, h/2 - 16, w*0.7, 10, 4);
-      ctx.fill();
-      // flame (stronger when tapping / going up)
-      const up = Math.max(0, -player.vy); // only when moving up
+      ctx.drawImage(shipImage, -50, -50, 100, 100);
+      const up = Math.max(0, -player.vy);
       const flame = Math.min(28, 8 + up * 0.06);
       if (flame > 0.5) {
         const jitter = (Math.sin(performance.now()*0.02) * 2);
         ctx.beginPath();
-        ctx.moveTo(-8, h/2 - 6);
-        ctx.lineTo( 8, h/2 - 6);
-        ctx.lineTo( 0, h/2 - 6 + flame + jitter);
+        ctx.moveTo(-8, 25);
+        ctx.lineTo(8, 25);
+        ctx.lineTo(0, 25 + flame + jitter);
         ctx.closePath();
-        // inner gradient-ish with two fills
-        ctx.fillStyle = '#ffb347'; ctx.fill();
+        ctx.fillStyle = '#47ff34';
+        ctx.fill();
         ctx.beginPath();
-        ctx.moveTo(-5, h/2 - 6);
-        ctx.lineTo( 5, h/2 - 6);
-        ctx.lineTo( 0, h/2 - 6 + flame*0.7 + jitter*0.6);
+        ctx.moveTo(-5, 25);
+        ctx.lineTo(5, 25);
+        ctx.lineTo(0, 25 + flame*0.7 + jitter*0.6);
         ctx.closePath();
-        ctx.fillStyle = '#ffd1a6'; ctx.fill();
+        ctx.fillStyle = '#a6ffd1';
+        ctx.fill();
       }
       ctx.restore();
-    }
-    // keep original UFO function intact (not used now)
-    function drawUFO(){
-      ctx.fillStyle = '#ddd';
-      roundRectPath(player.x - 20, player.y - 4, 40, 8, 4); ctx.fill();
-      ctx.fillStyle = '#fff';
-      ctx.beginPath(); ctx.arc(player.x, player.y - 6, 12, 0, Math.PI*2); ctx.fill();
-      ctx.strokeStyle = 'rgba(255,255,255,.5)';
-      ctx.beginPath(); ctx.arc(player.x, player.y, 20, 0, Math.PI*2); ctx.stroke();
     }
 /* ---------- obstacles ---------- */
 let obstacles = [];
@@ -249,8 +203,8 @@ function rectCircleOverlap(rx, ry, rw, rh, cx, cy, cr) {
 function spawnObstacle(){
   const dir = Math.random() < 0.5 ? 1 : -1;
   const imageIndex = randInt(0, 2);
-  const width = randInt(80, 200);
-  const height = width / 2;
+  const width = randInt(100, 250);
+  const height = width;
   const x = dir > 0 ? -width : cssW + width;
   const margin = 32;
   const y = rand(margin + height/2, cssH - margin - height/2);
