@@ -301,28 +301,41 @@ function drawObstacles() {
       ctx.textAlign='left'; ctx.fillText(mute?'🔇':'🔊', 20, HUD_Y);
     }
     function drawOverlay(){
-      if (state==='menu'){
-        ctx.fillStyle='rgba(0,0,0,.35)'; ctx.fillRect(0,0,cssW,cssH);
-      }
       ctx.fillStyle='#fff'; ctx.textAlign='center';
       if (state==='menu'){
-        // No dim overlay for retro look
-        ctx.font = '20px monospace';
-        ctx.fillText('1P', cssW*0.15, 20);
-        ctx.fillText('00', cssW*0.15, 45);
-        ctx.fillText('HIGH SCORE', cssW*0.5, 20);
-        ctx.fillText(best, cssW*0.5, 45);
-        ctx.fillText('2P', cssW*0.85, 20);
-        ctx.fillText('00', cssW*0.85, 45);
-        ctx.fillStyle = '#ff8c00';
-        ctx.font = 'bold 48px monospace';
-        ctx.fillText('PRESS START', cssW*0.5, cssH*0.35);
-        ctx.fillStyle = '#fff';
+        // Top left: high score
         ctx.font = '24px monospace';
-        ctx.fillText('INSERT COIN TO CONTINUE', cssW*0.5, cssH*0.45);
+        ctx.textAlign = 'left';
+        ctx.fillText('HIGH SCORE', 20, 20);
+        ctx.fillText(best, 20, 50);
+        // Top middle: Power 0
+        ctx.textAlign = 'center';
+        ctx.fillText('Power', cssW/2, 20);
+        ctx.fillText('0', cssW/2, 50);
+        // Top right: current score big
+        ctx.font = 'bold 48px monospace';
+        ctx.textAlign = 'right';
+        ctx.fillText(score, cssW - 20, 20);
+        // Middle: Start Game above green button with right arrow
+        ctx.font = 'bold 36px monospace';
+        ctx.fillStyle = '#fff';
+        ctx.textAlign = 'center';
+        ctx.fillText('Start Game', cssW/2, cssH*0.4);
+        const btnX = cssW/2 - 100, btnY = cssH*0.45, btnW = 200, btnH = 60;
+        ctx.fillStyle = '#00ff00';
+        roundRectPath(btnX, btnY, btnW, btnH, 20);
+        ctx.fill();
+        ctx.fillStyle = '#fff';
+        ctx.beginPath();
+        ctx.moveTo(btnX + btnW*0.3, btnY + btnH/2 - 20);
+        ctx.lineTo(btnX + btnW*0.7, btnY + btnH/2);
+        ctx.lineTo(btnX + btnW*0.3, btnY + btnH/2 + 20);
+        ctx.closePath();
+        ctx.fill();
+        // Bottom right: Taygames™
         ctx.font = '20px monospace';
-        ctx.fillText('CREDIT 00', cssW*0.85, cssH - 30);
-        ctx.fillText('Hold to rise · Release to fall · Dodge the junk', cssW*0.5, cssH*0.55);
+        ctx.textAlign = 'right';
+        ctx.fillText('Taygames™', cssW - 20, cssH - 30);
       } else if (state==='gameover'){
         ctx.fillStyle='rgba(0,0,0,0.7)'; ctx.fillRect(0,0,cssW,cssH);
         ctx.fillStyle='#fff';
@@ -357,12 +370,11 @@ function drawObstacles() {
         ctx.fillStyle='#000'; ctx.fillRect(0,0,cssW,cssH);
         updateStars(dt); drawStars(starsA,0.5); drawStars(starsB,0.9);
         drawObstacles(); drawTrail();
+        drawShip();
         drawHUD();
         if (state!=='playing') drawOverlay();
         updateFlash(); drawFlash();
         drawLevelDisplay();
-        // draw the ship LAST so it appears above overlays
-        drawShip();
       }catch(e){ console.error('Loop error', e); }
       requestAnimationFrame(loop);
     }
