@@ -116,6 +116,8 @@ shipImages[2] = new Image();
 shipImages[2].src = '70f317d9b3a2e913eb596732701caf83.png'; // skin 2
 shipImages[3] = new Image();
 shipImages[3].src = 'bddfc93e9029274b3b6a188f3147a42a.jpg'; // skin 3
+let bossImage = new Image();
+bossImage.src = 'Space Gov Agency.png';
 let currentSkin = 0;
 try {
 currentSkin = parseInt(localStorage.getItem('PZ_SKIN') || '0', 10);
@@ -402,6 +404,9 @@ ctx.globalAlpha = 1;
 let obstacles = [];
 let coins = [];
 let powerups = [];
+let boss = null;
+let bossBullets = [];
+let bossShootTimer = 0;
 let score = 0;
 let coinCount = 0;
 try {
@@ -490,6 +495,71 @@ const type = types[randInt(0, 2)];
 const x = Math.random() * cssW;
 const y = Math.random() * cssH;
 powerups.push({ type, x, y, r: 15 * S });
+}
+function updateBoss(dt) {
+if (boss) {
+boss.y += (player.y - boss.y) * 0.1;
+boss.y = Math.max(boss.height / 2 + SAFE_MARGIN_Y, Math.min(cssH - boss.height / 2 - SAFE_MARGIN_Y, boss.y));
+
+bossShootTimer += dt;
+if (bossShootTimer >= 1) {
+bossShootTimer = 0;
+bossBullets.push({ x: boss.x - boss.width / 2, y: boss.y, vx: -speed * 1.5, r: 5 * S, _crossed: false });
+}
+
+for (let i = bossBullets.length - 1; i >= 0; i--) {
+const b = bossBullets[i];
+b.x += b.vx * dt;
+if (b.x < -10) {
+bossBullets.splice(i, 1);
+continue;
+}
+if (circleOverlap(player.x, player.y, player.r, b.x, b.y, b.r)) {
+if (shieldTimer > 0) {
+bossBullets.splice(i, 1);
+addParticles(player.x, player.y, 25, '#00ffff');
+vib([60, 30, 60]);
+continue;
+}
+hit();
+addParticles(player.x, player.y, 10, '#ff0000');
+flashStart = performance.now();
+flashAlpha = 0.35;
+bossBullets.splice(i, 1);
+}
+if (!b._crossed && b.x < player.x - player.r) {
+b._crossed = true;
+score += comboMultiplier;
+playSound('pass');
+vib(15);
+streak++;
+comboMultiplier = 1 + Math.floor(streak / 5) * 0.5;
+if (score > best) {
+best = score;
+}
+if (score % 10 === 0) {
+currentLevel++;
+levelDisplayTimer = 2;
+levelDisplayAlpha = 1;
+speed = Math.min(300, speed + 10);
+spawnEvery = Math.max(1.0, spawnEvery - 0.05);
+if (currentLevel > 3) {
+boss = null;
+}
+}
+if (!dailyCompleted && score >= dailyGoal) {
+dailyCompleted = true;
+coinCount += 200;
+try {
+localStorage.setItem('PZ_COINS', coinCount);
+} catch {}
+try {
+localStorage.setItem('PZ_DAILY', JSON.stringify({date: lastDailyDate, completed: true}));
+} catch {}
+}
+}
+}
+}
 }
 function updateObstacles(dt){
 let currentSpeed = speed;
@@ -628,6 +698,27 @@ ctx.fillStyle = '#888';
 ctx.fillRect(baseX, py, o.width, o.height);
 }
 ctx.restore();
+}
+}
+function drawBoss() {
+if (boss) {
+const ready = bossImage && bossImage.complete && bossImage.naturalWidth > 0;
+const baseX = boss.x - boss.width / 2;
+const py = boss.y - boss.height / 2;
+if (ready) {
+ctx.drawImage(bossImage, baseX, py, boss.width, boss.height);
+} else {
+ctx.fillStyle = '#f00';
+ctx.fillRect(baseX, py, boss.width, boss.height);
+}
+}
+}
+function drawBossBullets() {
+ctx.fillStyle = '#f00';
+for (const b of bossBullets) {
+ctx.beginPath();
+ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
+ctx.fill();
 }
 }
 function drawCoins() {
@@ -868,12 +959,16 @@ ctx.fillText('Taygames™', cssW - 20 * S, cssH - 30*S);
 ctx.fillStyle = '#fff';
 ctx.font = FONT.menuMed;
 ctx.textAlign = 'center';
+ctx.fillText('Shop', cssW/2, cssH*0.2);
+ctx.font = FONT.menuSmall;
+ctx.fillText(`Coins: ${coinCount}`, cssW/2, cssH*0.25);
 const itemH = 40 * S;
 const shopY = cssH * 0.3;
 for (let i = 0; i < shopItems.length; i++) {
 const item = shopItems[i];
 const owned = upgrades[item.key] || 0;
 ctx.fillStyle = owned >= item.max ? '#888' : coinCount >= item.cost ? '#0f0' : '#f00';
+ctx.fillText(`${item.name} - ${item.cost} coins (${owned}/${item.max})`, cssW/2, shopY + i * itemH);
 }
 // Back button
 const backBtnW = 200*S, backBtnH = 60*S;
@@ -884,6 +979,7 @@ ctx.fill();
 ctx.fillStyle = '#fff';
 ctx.font = FONT.menuMed;
 ctx.textAlign = 'center';
+ctx.fillText('Back', cssW/2, backBtnY + 30*S);
 } else if (state==='gameover'){
 ctx.fillStyle='rgba(0,0,0,0.7)';
 ctx.fillRect(0,0,cssW,cssH);
@@ -920,6 +1016,9 @@ function resetGame(){
 obstacles=[];
 coins=[];
 powerups=[];
+boss = null;
+bossBullets = [];
+bossShootTimer = 0;
 score=0;
 spawnTimer=0;
 speed=150;
@@ -955,6 +1054,18 @@ if (player.vy > MAX_FALL) player.vy = MAX_FALL;
 if (player.vy < MAX_RISE) player.vy = MAX_RISE;
 player.y += player.vy * dt;
 if (player.y - player.r < -1 || player.y + player.r > cssH + 1) hit();
+if (currentLevel === 3 && !boss) {
+obstacles = [];
+coins = [];
+powerups = [];
+boss = { x: cssW - 50 * S, y: cssH / 2, width: 100 * S, height: 50 * S };
+spawnTimer = Infinity;
+coinSpawnTimer = Infinity;
+powerupSpawnTimer = Infinity;
+}
+if (boss) {
+updateBoss(dt);
+} else {
 spawnTimer += dt;
 if (spawnTimer >= spawnEvery){
 spawnTimer = 0;
@@ -971,6 +1082,7 @@ spawnPowerup();
 powerupSpawnTimer = Math.random() * 15 + 10;
 }
 updateObstacles(dt);
+}
 updateCoins(dt);
 updatePowerups(dt);
 updateTrail();
@@ -986,6 +1098,8 @@ drawStars(starsB,0.9);
 drawObstacles();
 drawCoins();
 drawPowerups();
+drawBoss();
+drawBossBullets();
 drawTrail();
 drawShip();
 drawParticles();
