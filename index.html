@@ -1,589 +1,924 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <title>Pressure Zone</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover, user-scalable=no">
-  <meta name="theme-color" content="#000">
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black">
-  <meta name="apple-mobile-web-app-title" content="Pressure Zone">
-  <link rel="manifest" href="manifest.json">
-  <style>
-    html,body{height:100%;margin:0;background:#000;color:#fff;overscroll-behavior:none}
-    canvas{display:block;touch-action:none}
-    html,body,canvas{ -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; }
-  </style>
+<meta charset="UTF-8" />
+<title>Pressure Zone</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#000">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="Pressure Zone">
+<link rel="manifest" href="manifest.json">
+<style>
+html,body{height:100%;margin:0;background:#000;color:#fff;overscroll-behavior:none}
+canvas{display:block;touch-action:none}
+html,body,canvas{ -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; }
+</style>
 </head>
 <body>
-  <canvas id="canvas"></canvas>
-  <script>
-    // --- SAFEMODE: work around Samsung Internet canvas scaling weirdness
-    const isSamsung = /SamsungBrowser|SM-|SAMSUNG|Galaxy/i.test(navigator.userAgent);
-    const USE_SAFE_MODE = true; // keep true for now
-    const FORCE_DPR_1 = isSamsung && USE_SAFE_MODE;
-
-    const canvas = document.getElementById('canvas');
-    const ctx = canvas.getContext('2d', { alpha: false });
-    if (!ctx) {
-      document.body.innerHTML = '<p style="color:#fff;text-align:center">Canvas unsupported</p>';
-      throw new Error('No 2D ctx');
-    }
-    ctx.textBaseline = 'top';
-
-    // Responsive UI scale (390x844 baseline ~ iPhone 12)
-    let state = 'menu';
-    let isBoosting = false;
-    let pressed = new Set();
-    let S = 1, FONT = {};
-    function computeScale(){
-      const baseW = 390, baseH = 844;
-      // Clamp so tiny phones shrink, larger screens don't overgrow
-      S = Math.max(0.6, Math.min(1.0, Math.min(cssW/baseW, cssH/baseH)));
-      FONT = {
-        hudBig:   `bold ${Math.round(48*S)}px monospace`,
-        hudSmall: `${Math.round(24*S)}px monospace`,
-        menuSmall:`${Math.round(20*S)}px monospace`,
-        menuMed:  `bold ${Math.round(36*S)}px monospace`,
-        menuBig:  `bold ${Math.round(48*S)}px monospace`,
-        level:    `bold ${Math.round(48*S)}px monospace`,
-        overTitle:`bold ${Math.round(48*S)}px monospace`,
-        overMed:  `${Math.round(32*S)}px monospace`,
-        overSmall:`${Math.round(24*S)}px monospace`,
-      };
-    }
-    let cssW = 0, cssH = 0;
-    const player = { x: 0, y: 0, vy: 0, r: 30 };
-
-    // stars declared early
-    let starsA = [], starsB = [];
-
-    function resize() {
-      const dpr = FORCE_DPR_1 ? 1 : Math.max(1, Math.min(2, window.devicePixelRatio || 1));
-      cssW = Math.max(1, window.innerWidth);
-      cssH = Math.max(1, window.innerHeight);
-      canvas.style.width = cssW + 'px';
-      canvas.style.height = cssH + 'px';
-      if (FORCE_DPR_1) {
-        canvas.width = cssW;
-        canvas.height = cssH;
-        ctx.setTransform(1,0,0,1,0,0);
-      } else {
-        canvas.width = Math.floor(cssW * dpr);
-        canvas.height = Math.floor(cssH * dpr);
-        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      }
-      if (state !== 'playing') {
-        player.x = cssW * 0.5;
-        player.y = cssH * 0.5;
-      }
-      computeScale();
-      player.r = Math.round(24 * S); // was 30, now responsive
-      // rebuild stars
-      starsA = []; starsB = [];
-      for (let i=0;i<60;i++) starsA.push({ x: Math.random()*cssW, y: Math.random()*cssH, r: 1 + Math.random() });
-      for (let i=0;i<30;i++) starsB.push({ x: Math.random()*cssW, y: Math.random()*cssH, r: 1.5 + Math.random()*1.5 });
-      // draw a visible test frame immediately
-      ctx.fillStyle = '#000';
-      ctx.fillRect(0,0,cssW,cssH);
-      ctx.fillStyle = '#0f0';
-      ctx.fillRect(0,0,8,8); // green pixel at top-left
-      ctx.fillStyle = '#fff';
-      ctx.font = '24px sans-serif';
-      ctx.fillText('PRESSURE ZONE — loading…', 12, 12);
-    }
-    addEventListener('resize', resize, { passive: true });
-    addEventListener('orientationchange', () => { setTimeout(resize, 100); isBoosting = false; pressed.clear(); });
-    resize();
-
-    let junkImages = [];
-    junkImages[0] = new Image(); junkImages[0].src = 'https://i.imgur.com/LhXYIPD.png';
-    junkImages[1] = new Image(); junkImages[1].src = 'https://i.imgur.com/YApyVR6.png';
-    junkImages[2] = new Image(); junkImages[2].src = 'https://i.imgur.com/kp7RKJA.png';
-    let shipImage = new Image(); shipImage.src = 'https://i.imgur.com/pXg798a.png';
-
-    // ---------- input ----------
-    canvas.addEventListener('pointerdown', (e) => {
-      ensureAudio();
-      if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
-      e.preventDefault();
-      const x = e.clientX, y = e.clientY;
-      if (x < 50 && y < 50) {
-        toggleMute();
-        return;
-      }
-      if (state === 'menu') {
-        // Check if click on Start Game button
-        const startBtnX = cssW/2 - 200*S/2;
-        const startBtnY = cssH*0.45;
-        const startBtnW = 200*S;
-        const startBtnH = 60*S;
-        if (x >= startBtnX && x <= startBtnX + startBtnW && y >= startBtnY && y <= startBtnY + startBtnH) {
-          resetGame();
-          startGame();
-          pressed.clear();
-          pressed.add(e.pointerId);
-          isBoosting = true;
-          playSound('tap');
-          return;
-        }
-        // Check if click on ZoneStore button
-        const storeBtnX = cssW/2 - 200*S/2;
-        const storeBtnY = cssH*0.45 + 80*S; // Below the start button with some spacing
-        const storeBtnW = 200*S;
-        const storeBtnH = 60*S;
-        if (x >= storeBtnX && x <= storeBtnX + storeBtnW && y >= storeBtnY && y <= storeBtnY + storeBtnH) {
-          playSound('tap');
-          alert('ZoneStore coming soon!'); // Placeholder action; can be replaced with actual functionality
-          return;
-        }
-        return;
-      } else if (state === 'gameover') {
-        resetGame();
-        state = 'menu';
-        playSound('tap');
-        return;
-      }
-      // playing
-      pressed.add(e.pointerId);
-      isBoosting = true;
-      playSound('tap');
-    }, { passive:false });
-
-    for (const ev of ['pointerup','pointercancel','pointerleave']) {
-      canvas.addEventListener(ev, e => {
-        pressed.delete(e.pointerId);
-        isBoosting = pressed.size > 0;
-      });
-    }
-    canvas.addEventListener('contextmenu', e => e.preventDefault());
-
-    addEventListener('keydown', (e) => {
-      ensureAudio();
-      if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
-      if (e.key === ' ' || e.key === 'ArrowUp') {
-        e.preventDefault();
-        if (state === 'menu') {
-          resetGame();
-          startGame();
-        }
-        if (state === 'gameover') {
-          resetGame();
-          state = 'menu';
-        }
-        isBoosting = true;
-        playSound('tap');
-      }
-    });
-    addEventListener('keyup', (e) => {
-      if (e.key === ' ' || e.key === 'ArrowUp') {
-        e.preventDefault();
-        isBoosting = false;
-      }
-    });
-    document.addEventListener('visibilitychange', () => {
-      if (document.hidden) {
-        isBoosting = false;
-        pressed.clear();
-      }
-    });
-
-    // ---------- physics / constants ----------
-    const GRAVITY = 300; // reduced for easier control on mobile
-    const BOOST_ACCEL = 600; // adjusted for easier boosting
-    const MAX_FALL = 300; // slower max fall
-    const MAX_RISE = -300; // slower max rise
-    const AIR_DRAG = 0.995;
-    const SAFE_MARGIN_Y = 64;
-
-    // ---------- audio ----------
-    let audioCtx = null;
-    let mute = false;
-    try { mute = localStorage.getItem('PZ_MUTE') === 'true'; } catch {}
-    function ensureAudio(){
-      if (!audioCtx){
-        const A = window.AudioContext||window.webkitAudioContext;
-        if(!A)return;
-        try{audioCtx=new A();}catch{audioCtx=null;}
-      }
-    }
-    function playSound(type){
-      if (mute || !audioCtx) return;
-      const o=audioCtx.createOscillator(), g=audioCtx.createGain();
-      o.connect(g); g.connect(audioCtx.destination);
-      let f=650, d=0.04, v=0.08, w='sine';
-      if(type==='pass'){f=750;d=0.05;v=0.12;w='square';}
-      if(type==='die'){f=180;d=0.16;v=0.25;w='sawtooth';}
-      o.type=w; o.frequency.value=f; g.gain.value=v;
-      const t=audioCtx.currentTime;
-      o.start(t); o.stop(t+d);
-      g.gain.exponentialRampToValueAtTime(0.0001,t+d);
-    }
-    function toggleMute(){
-      mute=!mute;
-      try{localStorage.setItem('PZ_MUTE', mute);}catch{}
-      ensureAudio();
-    }
-
-    // ---------- stars ----------
-    function updateStars(dt){
-      for (const s of starsA){ s.x -= 20*dt; if (s.x < -2){ s.x = cssW + 2; s.y = Math.random()*cssH; } }
-      for (const s of starsB){ s.x -= 40*dt; if (s.x < -2){ s.x = cssW + 2; s.y = Math.random()*cssH; } }
-    }
-    function drawStars(stars, a){
-      ctx.fillStyle = '#fff';
-      ctx.globalAlpha = a;
-      for (const s of stars){ ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, Math.PI*2); ctx.fill(); }
-      ctx.globalAlpha = 1;
-    }
-
-    // ---------- trail + UFO ----------
-    let trail = [];
-    const TRAIL_LENGTH = 20;
-    function updateTrail(){
-      trail.push(player.y);
-      if (trail.length > TRAIL_LENGTH) trail.shift();
-    }
-    function roundRectPath(x,y,w,h,r){
-      ctx.beginPath();
-      ctx.moveTo(x+r,y);
-      ctx.arcTo(x+w,y,x+w,y+h,r);
-      ctx.arcTo(x+w,y+h,x,y+h,r);
-      ctx.arcTo(x,y+h,x,y,r);
-      ctx.arcTo(x,y,x+w,y,r);
-      ctx.closePath();
-    }
-    function drawTrail(){
-      if (!trail.length) return;
-      ctx.strokeStyle = '#fff';
-      ctx.globalAlpha = .12;
-      ctx.beginPath();
-      ctx.moveTo(player.x, trail[0]);
-      for (let i=1;i<trail.length;i++) ctx.lineTo(player.x, trail[i]);
-      ctx.stroke();
-      ctx.globalAlpha = 1;
-    }
-    function drawShip() {
-      const tilt = Math.max(-0.6, Math.min(0.6, -player.vy / 700));
-      ctx.save();
-      ctx.translate(player.x, player.y);
-      ctx.rotate(tilt);
-      const sz = Math.round(80 * S); // was fixed 100
-      ctx.drawImage(shipImage, -sz/2, -sz/2, sz, sz);
-      // Flame (scaled)
-      const up = Math.max(0, -player.vy);
-      const flame = Math.min(28*S, (8*S) + up * 0.06);
-      if (flame > 0.5) {
-        const jitter = (Math.sin(performance.now()*0.02) * (2*S));
-        const baseY = (sz/2) - (25*S);
-        const w1 = 8*S, w2 = 5*S;
-        ctx.beginPath();
-        ctx.moveTo(-w1, baseY);
-        ctx.lineTo( w1, baseY);
-        ctx.lineTo( 0, baseY + flame + jitter);
-        ctx.closePath();
-        ctx.fillStyle = '#47ff34';
-        ctx.fill();
-        ctx.beginPath();
-        ctx.moveTo(-w2, baseY);
-        ctx.lineTo( w2, baseY);
-        ctx.lineTo( 0, baseY + flame*0.7 + jitter*0.6);
-        ctx.closePath();
-        ctx.fillStyle = '#a6ffd1';
-        ctx.fill();
-      }
-      ctx.restore();
-    }
-
-    /* ---------- obstacles ---------- */
-    let obstacles = [];
-    let score = 0;
-    let highscores = [];
-    try { highscores = JSON.parse(localStorage.getItem('PZ_HIGHSCORES_V1')) || []; } catch {}
-    if (!Array.isArray(highscores)) highscores = [];
-    let best = highscores.length ? Math.max(...highscores) : 0;
-    let spawnTimer = 0;
-    let speed = 150;
-    let spawnEvery = 1.5;
-    let flashAlpha = 0;
-    const flashDuration = 200;
-    let flashStart = 0;
-    let t = 0;
-    let currentLevel = 1;
-    let levelDisplayTimer = 0;
-    let levelDisplayAlpha = 0;
-
-    function rand(a,b){ return Math.random()*(b-a)+a; }
-    function randInt(a,b){ return (Math.random()*(b-a+1) + a)|0; }
-    function rectCircleOverlap(rx, ry, rw, rh, cx, cy, cr) {
-      const scale = 0.6;
-      rx += (rw - rw * scale) / 2;
-      ry += (rh - rh * scale) / 2;
-      rw *= scale;
-      rh *= scale;
-      const dx = cx - Math.max(rx, Math.min(cx, rx + rw));
-      const dy = cy - Math.max(ry, Math.min(cy, ry + rh));
-      return (dx * dx + dy * dy) <= (cr * cr);
-    }
-
-    function spawnObstacle(){
-      const dir = Math.random() < 0.5 ? 1 : -1;
-      const imageIndex = randInt(0, 2);
-      const width  = Math.round(randInt(80, 200) * S);
-      const aspect = [0.8, 0.6, 1.0][imageIndex];
-      const height = Math.max(Math.round(30*S), Math.round(width * aspect));
-      const x = dir > 0 ? -width : cssW + width;
-      const margin = 32;
-      const y = rand(margin + height/2, cssH - margin - height/2);
-      const seed = Math.random()*10;
-      obstacles.push({ dir, x, y, width, height, speed, seed, _crossed: false, imageIndex });
-    }
-
-    function updateObstacles(dt){
-      const playerRight = player.x + player.r;
-      const playerLeft = player.x - player.r;
-      for (let i=obstacles.length-1; i>=0; i--){
-        const o = obstacles[i];
-        o.x += o.dir * o.speed * dt;
-        o.y += Math.sin((t * 0.6) + o.seed) * 12 * dt;
-        const m = o.height/2 + SAFE_MARGIN_Y;
-        o.y = Math.max(m, Math.min(cssH - m, o.y));
-
-        // On-screen bounds
-        const obsLeft = (o.dir > 0) ? o.x : o.x - o.width;
-        const obsRight = obsLeft + o.width;
-        const isVisible = obsLeft < cssW && obsRight > 0;
-
-        // Only collide once the junk is actually visible on screen
-        if (isVisible && rectCircleOverlap(obsLeft, o.y - o.height/2, o.width, o.height, player.x, player.y, player.r)) {
-          gameOver();
-        }
-
-        // Score when fully cleared
-        const prevObsLeft = (o.dir > 0) ? (o.x - o.dir * o.speed * dt) : (o.x - o.dir * o.speed * dt) - o.width;
-        const prevObsRight = prevObsLeft + o.width;
-        if (!o._crossed &&
-           ((o.dir > 0 && prevObsLeft <= playerRight && obsLeft > playerRight) ||
-            (o.dir < 0 && prevObsRight >= playerLeft && obsRight < playerLeft))) {
-          o._crossed = true;
-          score++;
-          playSound('pass');
-          if (score > best) { best = score; }
-          if (score % 10 === 0) {
-            currentLevel++;
-            levelDisplayTimer = 2; // display for 2 seconds
-            levelDisplayAlpha = 1;
-            speed = Math.min(300, speed + 10);
-            spawnEvery = Math.max(1.0, spawnEvery - 0.05);
-          }
-        }
-
-        // Despawn when gone
-        if (obsRight < -2 || obsLeft > cssW + 2) obstacles.splice(i, 1);
-      }
-    }
-
-    function drawObstacles() {
-      for (const o of obstacles) {
-        let baseX = (o.dir > 0) ? o.x : o.x - o.width;
-        const py = o.y - o.height / 2;
-        if (baseX > cssW || baseX + o.width < 0) continue; // cull off-screen
-        ctx.save();
-        if (o.dir < 0) {
-          ctx.translate(baseX + o.width / 2, 0);
-          ctx.scale(-1, 1);
-          ctx.translate(-(baseX + o.width / 2), 0);
-        }
-        const img = junkImages[o.imageIndex];
-        if (!img || !img.complete) { ctx.restore(); continue; }
-        ctx.drawImage(junkImages[o.imageIndex], baseX, py, o.width, o.height);
-        ctx.restore();
-      }
-    }
-
-    // ---------- game flow / HUD ----------
-    function gameOver(){
-      // Add score to highscores
-      highscores.push(score);
-      highscores.sort((a, b) => b - a);
-      highscores = highscores.slice(0, 5);
-      try { localStorage.setItem('PZ_HIGHSCORES_V1', JSON.stringify(highscores)); } catch {}
-      best = highscores[0] || 0;
-      state='gameover'; playSound('die'); flashStart=performance.now(); flashAlpha=0.35; isBoosting = false; pressed.clear();
-    }
-
-    function updateFlash(){
-      if (flashAlpha>0){
-        const e=performance.now()-flashStart;
-        flashAlpha=0.35*(1-e/flashDuration);
-        if (flashAlpha<0) flashAlpha=0;
-      }
-    }
-
-    function drawFlash(){
-      if (flashAlpha<=0) return;
-      ctx.fillStyle='#fff';
-      ctx.globalAlpha=flashAlpha;
-      ctx.fillRect(0,0,cssW,cssH);
-      ctx.globalAlpha=1;
-    }
-
-    function updateLevelDisplay(dt) {
-      if (levelDisplayTimer > 0) {
-        levelDisplayTimer -= dt;
-        levelDisplayAlpha = Math.max(0, levelDisplayTimer / 0.5); // fade out in last 0.5s
-        if (levelDisplayTimer <= 0) levelDisplayAlpha = 0;
-      }
-    }
-
-    function drawLevelDisplay() {
-      if (levelDisplayAlpha > 0) {
-        ctx.globalAlpha = levelDisplayAlpha;
-        ctx.fillStyle = '#fff';
-        ctx.font = FONT.level;
-        ctx.textAlign = 'center';
-        ctx.fillText(`Level ${currentLevel}`, cssW / 2, cssH / 2 - 24*S);
-        ctx.globalAlpha = 1;
-      }
-    }
-
-    function drawHUD(){
-      const HUD_Y = Math.round((cssW < 600 ? 40 : 12) * S);
-      ctx.font = FONT.hudBig;   ctx.fillStyle='#fff'; ctx.textAlign='center';
-      ctx.fillText(String(score), Math.floor(cssW*0.5), HUD_Y);
-
-      ctx.font = FONT.hudSmall; ctx.textAlign='right';
-      ctx.fillText(`BEST ${best}`, cssW-20, HUD_Y);
-
-      ctx.textAlign='left';
-      ctx.fillText(mute?'🔇':'🔊', 20, HUD_Y);
-    }
-
-    function drawOverlay(){
-      ctx.fillStyle='#fff'; ctx.textAlign='center';
-      if (state==='menu'){
-        // Top left: high score
-        ctx.font = FONT.menuSmall; ctx.textAlign = 'left';
-        ctx.fillText('HIGH SCORE', 20, 20);
-        ctx.fillText(best, 20, 50*S);
-
-        // Top middle: Power 0
-        ctx.textAlign = 'center';
-        ctx.fillText('Power', cssW/2, 20);
-        ctx.fillText('0', cssW/2, 50*S);
-
-        // Top right: current score big (kept, but scaled by S)
-        ctx.font = FONT.menuBig; ctx.textAlign = 'right';
-        ctx.fillText(score, cssW - 20, 20);
-
-        // Middle: Start Game
-        ctx.font = FONT.menuMed; ctx.fillStyle = '#fff'; ctx.textAlign = 'center';
-        ctx.fillText('Start Game', cssW/2, cssH*0.4);
-        const btnW = 200*S, btnH = 60*S;
-        const btnX = cssW/2 - btnW/2, btnY = cssH*0.45;
-        ctx.fillStyle = '#00ff00';
-        roundRectPath(btnX, btnY, btnW, btnH, 20*S); ctx.fill();
-
-        // Arrow inside button
-        ctx.fillStyle = '#000';
-        const ax = btnX + btnW*0.6, ay = btnY + btnH/2;
-        ctx.beginPath();
-        ctx.moveTo(ax - 18*S, ay - 12*S);
-        ctx.lineTo(ax + 18*S, ay);
-        ctx.lineTo(ax - 18*S, ay + 12*S);
-        ctx.closePath(); ctx.fill();
-
-        // ZoneStore button
-        ctx.fillStyle = '#fff';
-        ctx.font = FONT.menuMed;
-        ctx.textAlign = 'center';
-        ctx.fillText('ZoneStore', cssW/2, cssH*0.4 + 80*S);
-
-        ctx.fillStyle = '#00ff00';
-        const storeBtnX = cssW/2 - btnW/2, storeBtnY = cssH*0.45 + 80*S;
-        roundRectPath(storeBtnX, storeBtnY, btnW, btnH, 20*S); ctx.fill();
-        ctx.fillStyle = '#000';
-        ctx.font = FONT.menuMed;
-        ctx.fillText('ZS', storeBtnX + btnW/2, storeBtnY + 10*S); // placeholder
-
-        // Bottom right: Taygames™
-        ctx.font = `${Math.round(20*S)}px monospace`; ctx.textAlign = 'right'; ctx.fillStyle = '#fff';
-        ctx.fillText('Taygames™', cssW - 20, cssH - 30*S);
-      } else if (state==='gameover'){
-        ctx.fillStyle='rgba(0,0,0,0.7)'; ctx.fillRect(0,0,cssW,cssH);
-        ctx.fillStyle='#fff'; ctx.textAlign='center';
-        ctx.font=FONT.overTitle; ctx.fillText('Game Over', cssW*0.5, cssH*0.3);
-        ctx.font=FONT.overMed;   ctx.fillText(`Your Score: ${score}`, cssW*0.5, cssH*0.4);
-        ctx.font=FONT.overSmall; ctx.fillText('Leaderboard', cssW*0.5, cssH*0.5);
-        for (let i = 0; i < highscores.length; i++) {
-          ctx.fillText(`${i+1}. ${highscores[i]}`, cssW*0.5, cssH*0.5 + 30*S + (i * 30*S));
-        }
-        if (highscores.length === 0) {
-          ctx.fillText('No scores yet', cssW*0.5, cssH*0.5 + 30*S);
-        }
-        ctx.fillText('Tap to return to menu', cssW*0.5, cssH*0.7);
-      }
-    }
-
-    function startGame(){
-      state='playing';
-      spawnTimer = spawnEvery * 0.6;
-    }
-
-    function resetGame(){
-      obstacles=[]; score=0; spawnTimer=0; speed=150; spawnEvery=1.5; currentLevel=1; levelDisplayTimer=0; levelDisplayAlpha=0;
-      player.y = cssH*0.5; player.vy=0; trail=[]; flashAlpha=0; isBoosting = false; pressed.clear();
-    }
-
-    // ---------- loop ----------
-    let lastTime = performance.now();
-    function loop(now){
-      try{
-        let dt = (now - lastTime)/1000; lastTime = now; dt = Math.min(0.033, Math.max(0, dt)); t += dt;
-
-        // update
-        if (state==='playing'){
-          player.vy += GRAVITY * dt;
-          if (isBoosting) player.vy -= BOOST_ACCEL * dt;
-          player.vy *= AIR_DRAG;
-          if (player.vy > MAX_FALL) player.vy = MAX_FALL;
-          if (player.vy < MAX_RISE) player.vy = MAX_RISE;
-          player.y += player.vy * dt;
-          if (player.y - player.r < -1 || player.y + player.r > cssH + 1) gameOver();
-
-          spawnTimer += dt;
-          if (spawnTimer >= spawnEvery){
-            spawnTimer = 0;
-            if (obstacles.length < 8) spawnObstacle();
-          }
-
-          updateObstacles(dt);
-          updateTrail();
-          updateLevelDisplay(dt);
-        }
-
-        // draw
-        ctx.fillStyle='#000'; ctx.fillRect(0,0,cssW,cssH);
-        updateStars(dt); drawStars(starsA,0.5); drawStars(starsB,0.9);
-        drawObstacles();
-        drawTrail();
-        drawShip();
-        drawHUD();
-        if (state!=='playing') drawOverlay();
-        updateFlash(); drawFlash();
-        drawLevelDisplay();
-      }catch(e){
-        console.error('Loop error', e);
-      }
-      requestAnimationFrame(loop);
-    }
-    requestAnimationFrame(loop);
-  </script>
-
-  <script>
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('sw.js').catch(()=>{});
-    }
-  </script>
+<canvas id="canvas"></canvas>
+<script>
+// --- SAFEMODE: work around Samsung Internet canvas scaling weirdness
+const isSamsung = /SamsungBrowser|SM-|SAMSUNG|Galaxy/i.test(navigator.userAgent);
+const FORCE_DPR_1 = isSamsung; // Only force on Samsung to avoid black screens elsewhere
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d', { alpha: false });
+if (!ctx) {
+document.body.innerHTML = '<p style="color:#fff;text-align:center">Canvas unsupported</p>';
+throw new Error('No 2D ctx');
+}
+ctx.textBaseline = 'top';
+let LAST_ERR = '';
+window.addEventListener('error', e => {
+LAST_ERR = (e.error && e.error.stack) || e.message || String(e);
+console.log('[PZ ERROR]', LAST_ERR);
+});
+// Responsive UI scale (390x844 baseline ~ iPhone 12)
+let state = 'menu';
+let isBoosting = false;
+let pressed = new Set();
+let S = 1, FONT = {};
+function computeScale(){
+const baseW = 390, baseH = 844;
+// Clamp so tiny phones shrink, larger screens don't overgrow
+S = Math.max(0.6, Math.min(1.0, Math.min(cssW/baseW, cssH/baseH)));
+FONT = {
+hudBig: `bold ${Math.round(48*S)}px monospace`,
+hudSmall: `${Math.round(24*S)}px monospace`,
+menuSmall:`${Math.round(20*S)}px monospace`,
+menuMed: `bold ${Math.round(36*S)}px monospace`,
+menuBig: `bold ${Math.round(48*S)}px monospace`,
+level: `bold ${Math.round(48*S)}px monospace`,
+overTitle:`bold ${Math.round(48*S)}px monospace`,
+overMed: `${Math.round(32*S)}px monospace`,
+overSmall:`${Math.round(24*S)}px monospace`,
+};
+}
+let cssW = 0, cssH = 0;
+const player = { x: 0, y: 0, vy: 0, r: 30 };
+// stars declared early
+let starsA = [], starsB = [];
+function resize() {
+const dpr = FORCE_DPR_1 ? 1 : Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+cssW = Math.max(1, window.innerWidth);
+cssH = Math.max(1, window.innerHeight);
+canvas.style.width = cssW + 'px';
+canvas.style.height = cssH + 'px';
+if (FORCE_DPR_1) {
+canvas.width = cssW;
+canvas.height = cssH;
+ctx.setTransform(1,0,0,1,0,0);
+} else {
+canvas.width = Math.floor(cssW * dpr);
+canvas.height = Math.floor(cssH * dpr);
+ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+if (state !== 'playing') {
+player.x = cssW * 0.5;
+player.y = cssH * 0.5;
+}
+computeScale();
+player.r = Math.round(24 * S); // was 30, now responsive
+// rebuild stars
+starsA = []; starsB = [];
+for (let i=0;i<60;i++) starsA.push({ x: Math.random()*cssW, y: Math.random()*cssH, r: 1 + Math.random() });
+for (let i=0;i<30;i++) starsB.push({ x: Math.random()*cssW, y: Math.random()*cssH, r: 1.5 + Math.random()*1.5 });
+// draw a visible test frame immediately
+ctx.fillStyle = '#000';
+ctx.fillRect(0,0,cssW,cssH);
+ctx.fillStyle = '#0f0';
+ctx.fillRect(0,0,8,8); // green pixel at top-left
+ctx.fillStyle = '#fff';
+ctx.font = '24px sans-serif';
+ctx.fillText('PRESSURE ZONE — loading…', 12, 12);
+}
+addEventListener('resize', resize, { passive: true });
+addEventListener('orientationchange', () => {
+setTimeout(resize, 100);
+isBoosting = false;
+pressed.clear();
+});
+resize();
+let junkImages = [];
+junkImages[0] = new Image();
+junkImages[0].src = 'LhXYIPD.png';
+junkImages[1] = new Image();
+junkImages[1].src = 'YApyVR6.png';
+junkImages[2] = new Image();
+junkImages[2].src = 'kp7RKJA.png';
+let shipImages = [];
+shipImages[0] = new Image();
+shipImages[0].src = 'pXg798a.png'; // default
+shipImages[1] = new Image();
+shipImages[1].src = 'pngtree-ufo-colored-cartoon-png-image_6671354.png'; // skin 1
+shipImages[2] = new Image();
+shipImages[2].src = '70f317d9b3a2e913eb596732701caf83.png'; // skin 2
+shipImages[3] = new Image();
+shipImages[3].src = 'bddfc93e9029274b3b6a188f3147a42a.jpg'; // skin 3
+let currentSkin = 0;
+try {
+currentSkin = parseInt(localStorage.getItem('PZ_SKIN') || '0', 10);
+if (!Number.isFinite(currentSkin)) currentSkin = 0;
+currentSkin = Math.max(0, Math.min(shipImages.length - 1, currentSkin));
+} catch {}
+// ---------- input ----------
+canvas.addEventListener('pointerdown', (e) => {
+ensureAudio();
+if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+e.preventDefault();
+const x = e.clientX, y = e.clientY;
+if (x < 50 && y < 50) {
+toggleMute();
+return;
+}
+if (state === 'menu') {
+// Check if tapping shop buttons
+if (handleShopTap(x, y)) return;
+resetGame();
+startGame();
+pressed.clear();
+pressed.add(e.pointerId);
+isBoosting = true;
+playSound('tap');
+return;
+} else if (state === 'gameover') {
+resetGame();
+state = 'menu';
+playSound('tap');
+return;
+}
+// playing
+pressed.add(e.pointerId);
+isBoosting = true;
+playSound('tap');
+}, { passive:false });
+for (const ev of ['pointerup','pointercancel','pointerleave']) {
+canvas.addEventListener(ev, e => {
+pressed.delete(e.pointerId);
+isBoosting = pressed.size > 0;
+});
+}
+canvas.addEventListener('contextmenu', e => e.preventDefault());
+addEventListener('keydown', (e) => {
+ensureAudio();
+if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+if (e.key === ' ' || e.key === 'ArrowUp') {
+e.preventDefault();
+if (state === 'menu') {
+resetGame();
+startGame();
+}
+if (state === 'gameover') {
+resetGame();
+state = 'menu';
+}
+isBoosting = true;
+playSound('tap');
+}
+});
+addEventListener('keyup', (e) => {
+if (e.key === ' ' || e.key === 'ArrowUp') {
+e.preventDefault();
+isBoosting = false;
+}
+});
+document.addEventListener('visibilitychange', () => {
+if (document.hidden) {
+isBoosting = false;
+pressed.clear();
+}
+});
+// ---------- physics / constants ----------
+let GRAVITY = 300; // reduced for easier control on mobile
+let BOOST_ACCEL = 600; // adjusted for easier boosting
+const MAX_FALL = 300; // slower max fall
+const MAX_RISE = -300; // slower max rise
+const AIR_DRAG = 0.995;
+const SAFE_MARGIN_Y = 64;
+let maxLives = 3; // initialize before upgrades are applied
+// Upgrades (merge defaults with any saved values; coerce to non-negative ints)
+let upgrades = { boost: 0, gravity: 0, magnet: 0, lives: 0, skin1: 0, skin2: 0, skin3: 0 };
+try {
+const saved = JSON.parse(localStorage.getItem('PZ_UPGRADES') || '{}');
+upgrades = Object.assign({}, upgrades, saved);
+} catch {}
+for (const k of Object.keys(upgrades)) {
+const v = Number(upgrades[k]);
+upgrades[k] = Number.isFinite(v) && v >= 0 ? (v|0) : 0;
+}
+function applyUpgrades() {
+BOOST_ACCEL = 600 * (1 + 0.2 * (upgrades.boost || 0));
+GRAVITY = 300 * (1 - 0.1 * (upgrades.gravity || 0));
+maxLives = 3 + (upgrades.lives || 0);
+}
+applyUpgrades();
+// ---------- audio ----------
+let audioCtx = null;
+let mute = false;
+try {
+mute = localStorage.getItem('PZ_MUTE') === 'true';
+} catch {}
+function ensureAudio(){
+if (!audioCtx){
+const A = window.AudioContext||window.webkitAudioContext;
+if(!A)return;
+try{audioCtx=new A();}catch{audioCtx=null;}
+}
+}
+function playSound(type){
+if (mute || !audioCtx) return;
+const o=audioCtx.createOscillator(), g=audioCtx.createGain();
+o.connect(g);
+g.connect(audioCtx.destination);
+let f=650, d=0.04, v=0.08, w='sine';
+if(type==='pass'){f=750;d=0.05;v=0.12;w='square';}
+if(type==='die'){f=180;d=0.16;v=0.25;w='sawtooth';}
+if(type==='coin'){f=1000;d=0.03;v=0.1;w='triangle';}
+if(type==='powerup'){f=850;d=0.06;v=0.15;w='sine';}
+o.type=w;
+o.frequency.value=f;
+g.gain.value=v;
+const t=audioCtx.currentTime;
+o.start(t);
+o.stop(t+d);
+g.gain.exponentialRampToValueAtTime(0.0001,t+d);
+}
+function toggleMute(){
+mute=!mute;
+try{localStorage.setItem('PZ_MUTE', mute);}catch{}
+ensureAudio();
+}
+// ---------- stars ----------
+function updateStars(dt){
+for (const s of starsA){
+s.x -= 20*dt;
+if (s.x < -2){
+s.x = cssW + 2;
+s.y = Math.random()*cssH;
+}
+}
+for (const s of starsB){
+s.x -= 40*dt;
+if (s.x < -2){
+s.x = cssW + 2;
+s.y = Math.random()*cssH;
+}
+}
+}
+function drawStars(stars, a){
+ctx.fillStyle = '#fff';
+ctx.globalAlpha = a;
+for (const s of stars){
+ctx.beginPath();
+ctx.arc(s.x, s.y, s.r, 0, Math.PI*2);
+ctx.fill();
+}
+ctx.globalAlpha = 1;
+}
+// ---------- trail + UFO ----------
+let trail = [];
+const TRAIL_LENGTH = 20;
+function updateTrail(){
+trail.push(player.y);
+if (trail.length > TRAIL_LENGTH) trail.shift();
+}
+function roundRectPath(x,y,w,h,r){
+ctx.beginPath();
+ctx.moveTo(x+r,y);
+ctx.arcTo(x+w,y,x+w,y+h,r);
+ctx.arcTo(x+w,y+h,x,y+h,r);
+ctx.arcTo(x,y+h,x,y,r);
+ctx.arcTo(x,y,x+w,y,r);
+ctx.closePath();
+}
+function drawTrail(){
+if (!trail.length) return;
+ctx.strokeStyle = '#fff';
+ctx.globalAlpha = .12;
+ctx.beginPath();
+ctx.moveTo(player.x, trail[0]);
+for (let i=1;i<trail.length;i++) ctx.lineTo(player.x, trail[i]);
+ctx.stroke();
+ctx.globalAlpha = 1;
+}
+function drawShip() {
+const tilt = Math.max(-0.6, Math.min(0.6, -player.vy / 700));
+ctx.save();
+ctx.translate(player.x, player.y);
+ctx.rotate(tilt);
+const sz = Math.round(80 * S);
+const img = shipImages[currentSkin];
+const ready = img && img.complete && img.naturalWidth > 0;
+if (ready) {
+ctx.drawImage(img, -sz/2, -sz/2, sz, sz);
+} else {
+// fallback UFO
+ctx.fillStyle = '#7effa5';
+ctx.beginPath();
+ctx.ellipse(0, 0, sz*0.45, sz*0.28, 0, 0, Math.PI*2);
+ctx.fill();
+ctx.fillStyle = '#a6ffd1';
+ctx.beginPath();
+ctx.ellipse(0, -sz*0.1, sz*0.22, sz*0.16, 0, 0, Math.PI*2);
+ctx.fill();
+}
+// Flame
+const up = Math.max(0, -player.vy);
+const flame = Math.min(28*S, (8*S) + up * 0.06);
+if (flame > 0.5) {
+const jitter = (Math.sin(performance.now()*0.02) * (2*S));
+const baseY = (sz/2) - (25*S);
+const w1 = 8*S, w2 = 5*S;
+ctx.beginPath();
+ctx.moveTo(-w1, baseY);
+ctx.lineTo( w1, baseY);
+ctx.lineTo( 0, baseY + flame + jitter);
+ctx.closePath();
+ctx.fillStyle = '#47ff34';
+ctx.fill();
+ctx.beginPath();
+ctx.moveTo(-w2, baseY);
+ctx.lineTo( w2, baseY);
+ctx.lineTo( 0, baseY + flame*0.7 + jitter*0.6);
+ctx.closePath();
+ctx.fillStyle = '#a6ffd1';
+ctx.fill();
+}
+ctx.restore();
+}
+// ---------- particles ----------
+let particles = [];
+function addParticles(x, y, count, color) {
+for (let i = 0; i < count; i++) {
+particles.push({ x, y, vx: (Math.random() - 0.5) * 200, vy: (Math.random() - 0.5) * 200, life: 1, color });
+}
+}
+function updateParticles(dt) {
+for (let i = particles.length - 1; i >= 0; i--) {
+const p = particles[i];
+p.x += p.vx * dt;
+p.y += p.vy * dt;
+p.life -= dt * 2;
+if (p.life <= 0) particles.splice(i, 1);
+}
+}
+function drawParticles() {
+for (const p of particles) {
+ctx.fillStyle = p.color;
+ctx.globalAlpha = p.life;
+ctx.beginPath();
+ctx.arc(p.x, p.y, 2 * S, 0, Math.PI * 2);
+ctx.fill();
+}
+ctx.globalAlpha = 1;
+}
+/* ---------- obstacles ---------- */
+let obstacles = [];
+let coins = [];
+let powerups = [];
+let score = 0;
+let coinCount = 0;
+try {
+coinCount = parseInt(localStorage.getItem('PZ_COINS') || '0', 10);
+} catch {}
+let highscores = [];
+try {
+highscores = JSON.parse(localStorage.getItem('PZ_HIGHSCORES_V1')) || [];
+} catch {}
+if (!Array.isArray(highscores)) highscores = [];
+let best = highscores.length ? Math.max(...highscores) : 0;
+let spawnTimer = 0;
+let coinSpawnTimer = 0;
+let powerupSpawnTimer = 0;
+let speed = 150;
+let spawnEvery = 1.5;
+let flashAlpha = 0;
+const flashDuration = 200;
+let flashStart = 0;
+let t = 0;
+let currentLevel = 1;
+let levelDisplayTimer = 0;
+let levelDisplayAlpha = 0;
+let lives = maxLives;
+let streak = 0;
+let comboMultiplier = 1;
+let shieldTimer = 0;
+let slowMoTimer = 0;
+let multiplierTimer = 0;
+let dailyGoal = 150; // example
+let dailyCompleted = false;
+let lastDailyDate = '';
+try {
+const savedDaily = JSON.parse(localStorage.getItem('PZ_DAILY')) || {};
+lastDailyDate = savedDaily.date || '';
+dailyCompleted = savedDaily.completed || false;
+} catch {}
+function checkDaily() {
+const today = new Date().toISOString().slice(0,10);
+if (today !== lastDailyDate) {
+dailyCompleted = false;
+lastDailyDate = today;
+try {
+localStorage.setItem('PZ_DAILY', JSON.stringify({date: today, completed: false}));
+} catch {}
+}
+}
+checkDaily();
+function rand(a,b){ return Math.random()*(b-a)+a; }
+function randInt(a,b){ return (Math.random()*(b-a+1) + a)|0; }
+function rectCircleOverlap(rx, ry, rw, rh, cx, cy, cr) {
+const scale = 0.6;
+rx += (rw - rw * scale) / 2;
+ry += (rh - rh * scale) / 2;
+rw *= scale;
+rh *= scale;
+const dx = cx - Math.max(rx, Math.min(cx, rx + rw));
+const dy = cy - Math.max(ry, Math.min(cy, ry + rh));
+return (dx * dx + dy * dy) <= (cr * cr);
+}
+function circleOverlap(x1, y1, r1, x2, y2, r2) {
+const dx = x1 - x2;
+const dy = y1 - y2;
+return (dx * dx + dy * dy) <= ((r1 + r2) * (r1 + r2));
+}
+function spawnObstacle(){
+const dir = Math.random() < 0.5 ? 1 : -1;
+const imageIndex = randInt(0, 2);
+const width = Math.round(randInt(80, 200) * S);
+const aspect = [0.8, 0.6, 1.0][imageIndex];
+const height = Math.max(Math.round(30*S), Math.round(width * aspect));
+const x = dir > 0 ? -width : cssW + width;
+const margin = 32;
+const y = rand(margin + height/2, cssH - margin - height/2);
+const seed = Math.random()*10;
+obstacles.push({ type: 'obstacle', dir, x, y, width, height, speed, seed, _crossed: false, imageIndex });
+}
+function spawnCoin() {
+const x = Math.random() * cssW;
+const y = Math.random() * cssH;
+coins.push({ x, y, r: 10 * S });
+}
+function spawnPowerup() {
+const types = ['shield', 'slowmo', 'multiplier'];
+const type = types[randInt(0, 2)];
+const x = Math.random() * cssW;
+const y = Math.random() * cssH;
+powerups.push({ type, x, y, r: 15 * S });
+}
+function updateObstacles(dt){
+let currentSpeed = speed;
+if (slowMoTimer > 0) currentSpeed *= 0.5;
+const playerRight = player.x + player.r;
+const playerLeft = player.x - player.r;
+for (let i=obstacles.length-1; i>=0; i--){
+const o = obstacles[i];
+o.x += o.dir * currentSpeed * dt;
+o.y += Math.sin((t * 0.6) + o.seed) * 12 * dt;
+const m = o.height/2 + SAFE_MARGIN_Y;
+o.y = Math.max(m, Math.min(cssH - m, o.y));
+// On-screen bounds
+const obsLeft = (o.dir > 0) ? o.x : o.x - o.width;
+const obsRight = obsLeft + o.width;
+const isVisible = obsLeft < cssW && obsRight > 0;
+// Only collide once the junk is actually visible on screen
+if (isVisible && rectCircleOverlap(obsLeft, o.y - o.height/2, o.width, o.height, player.x, player.y, player.r)) {
+if (shieldTimer > 0) {
+obstacles.splice(i, 1);
+addParticles(player.x, player.y, 20, '#00ffff');
+continue;
+}
+hit();
+addParticles(player.x, player.y, 10, '#ff0000');
+flashStart = performance.now();
+flashAlpha = 0.35;
+}
+// Score when fully cleared
+const prevObsLeft = (o.dir > 0) ? (o.x - o.dir * currentSpeed * dt) : (o.x - o.dir * currentSpeed * dt) - o.width;
+const prevObsRight = prevObsLeft + o.width;
+if (!o._crossed && ((o.dir > 0 && prevObsLeft <= playerRight && obsLeft > playerRight) || (o.dir < 0 && prevObsRight >= playerLeft && obsRight < playerLeft))) {
+o._crossed = true;
+score += comboMultiplier;
+playSound('pass');
+streak++;
+comboMultiplier = 1 + Math.floor(streak / 5) * 0.5;
+if (score > best) {
+best = score;
+}
+if (score % 10 === 0) {
+currentLevel++;
+levelDisplayTimer = 2; // display for 2 seconds
+levelDisplayAlpha = 1;
+speed = Math.min(300, speed + 10);
+spawnEvery = Math.max(1.0, spawnEvery - 0.05);
+}
+if (!dailyCompleted && score >= dailyGoal) {
+dailyCompleted = true;
+coinCount += 200;
+try {
+localStorage.setItem('PZ_COINS', coinCount);
+} catch {}
+try {
+localStorage.setItem('PZ_DAILY', JSON.stringify({date: lastDailyDate, completed: true}));
+} catch {}
+}
+}
+// Despawn when gone
+if (obsRight < -2 || obsLeft > cssW + 2) obstacles.splice(i, 1);
+}
+}
+function hit() {
+lives--;
+streak = 0;
+comboMultiplier = 1;
+if (lives <= 0) {
+gameOver();
+} else {
+playSound('die');
+}
+}
+function updateCoins(dt) {
+for (let i = coins.length - 1; i >= 0; i--) {
+const c = coins[i];
+const dist = Math.hypot(player.x - c.x, player.y - c.y);
+const magnetRange = 100 * (1 + upgrades.magnet);
+if (dist < magnetRange) {
+// Attract to player
+const dx = player.x - c.x;
+const dy = player.y - c.y;
+const len = Math.hypot(dx, dy);
+if (len > 0) {
+c.x += (dx / len) * 100 * dt;
+c.y += (dy / len) * 100 * dt;
+}
+}
+if (circleOverlap(player.x, player.y, player.r, c.x, c.y, c.r)) {
+coins.splice(i, 1);
+coinCount++;
+playSound('coin');
+addParticles(c.x, c.y, 5, '#ffd700');
+}
+}
+}
+function updatePowerups(dt) {
+shieldTimer = Math.max(0, shieldTimer - dt);
+slowMoTimer = Math.max(0, slowMoTimer - dt);
+multiplierTimer = Math.max(0, multiplierTimer - dt);
+if (multiplierTimer > 0) comboMultiplier = 2;
+for (let i = powerups.length - 1; i >= 0; i--) {
+const p = powerups[i];
+if (circleOverlap(player.x, player.y, player.r, p.x, p.y, p.r)) {
+powerups.splice(i, 1);
+playSound('powerup');
+addParticles(p.x, p.y, 10, '#00ff00');
+if (p.type === 'shield') shieldTimer = 5;
+if (p.type === 'slowmo') slowMoTimer = 3;
+if (p.type === 'multiplier') multiplierTimer = 10;
+}
+}
+}
+function drawObstacles() {
+for (const o of obstacles) {
+let baseX = (o.dir > 0) ? o.x : o.x - o.width;
+const py = o.y - o.height / 2;
+if (baseX > cssW || baseX + o.width < 0) continue; // cull off-screen
+ctx.save();
+if (o.dir < 0) {
+ctx.translate(baseX + o.width / 2, 0);
+ctx.scale(-1, 1);
+ctx.translate(-(baseX + o.width / 2), 0);
+}
+const img = junkImages[o.imageIndex];
+const ready = img && img.complete && img.naturalWidth > 0;
+if (ready) {
+ctx.drawImage(img, baseX, py, o.width, o.height);
+} else {
+// fallback so game still plays even if image hosts block CORS
+ctx.fillStyle = '#888';
+ctx.fillRect(baseX, py, o.width, o.height);
+}
+ctx.restore();
+}
+}
+function drawCoins() {
+ctx.fillStyle = '#ffd700';
+for (const c of coins) {
+ctx.beginPath();
+ctx.arc(c.x, c.y, c.r, 0, Math.PI * 2);
+ctx.fill();
+}
+}
+function drawPowerups() {
+for (const p of powerups) {
+ctx.fillStyle = p.type === 'shield' ? '#00ffff' : p.type === 'slowmo' ? '#ff00ff' : '#ffff00';
+ctx.beginPath();
+ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+ctx.fill();
+}
+}
+// ---------- game flow / HUD ----------
+function gameOver(){
+// Add score to highscores
+highscores.push(score);
+highscores.sort((a, b) => b - a);
+highscores = highscores.slice(0, 5);
+try {
+localStorage.setItem('PZ_HIGHSCORES_V1', JSON.stringify(highscores));
+} catch {}
+try {
+localStorage.setItem('PZ_COINS', coinCount);
+} catch {}
+best = highscores[0] || 0;
+state='gameover';
+playSound('die');
+flashStart=performance.now();
+flashAlpha=0.35;
+isBoosting = false;
+pressed.clear();
+}
+function updateFlash(){
+if (flashAlpha>0){
+const e=performance.now()-flashStart;
+flashAlpha=0.35*(1-e/flashDuration);
+if (flashAlpha<0) flashAlpha=0;
+}
+}
+function drawFlash(){
+if (flashAlpha<=0) return;
+ctx.fillStyle='#fff';
+ctx.globalAlpha=flashAlpha;
+ctx.fillRect(0,0,cssW,cssH);
+ctx.globalAlpha=1;
+}
+function updateLevelDisplay(dt) {
+if (levelDisplayTimer > 0) {
+levelDisplayTimer -= dt;
+levelDisplayAlpha = Math.min(1, Math.max(0, levelDisplayTimer / 0.5)); // fade out in last 0.5s
+if (levelDisplayTimer <= 0) levelDisplayAlpha = 0;
+}
+}
+function drawLevelDisplay() {
+if (levelDisplayAlpha > 0) {
+ctx.globalAlpha = levelDisplayAlpha;
+ctx.fillStyle = '#fff';
+ctx.font = FONT.level;
+ctx.textAlign = 'center';
+ctx.fillText(`Level ${currentLevel}`, cssW / 2, cssH / 2 - 24*S);
+ctx.globalAlpha = 1;
+}
+}
+function drawHUD(){
+const HUD_Y = Math.round((cssW < 600 ? 40 : 12) * S);
+const HUD_X_OFFSET = Math.round(20 * S); // scaled for small screens
+ctx.font = FONT.hudBig;
+ctx.fillStyle='#fff';
+ctx.textAlign='center';
+ctx.fillText(String(score), Math.floor(cssW*0.5), HUD_Y);
+ctx.font = FONT.hudSmall;
+ctx.textAlign='right';
+ctx.fillText(`BEST ${best}`, cssW - HUD_X_OFFSET, HUD_Y);
+ctx.textAlign='left';
+ctx.fillText(mute?'🔇':'🔊', HUD_X_OFFSET, HUD_Y);
+ctx.fillText(`Coins: ${coinCount}`, HUD_X_OFFSET, HUD_Y + 30*S);
+ctx.fillText(`Lives: ${lives}/${maxLives}`, HUD_X_OFFSET, HUD_Y + 60*S);
+// ensure combo centers under the score
+ctx.textAlign = 'center';
+if (streak > 0) ctx.fillText(`Combo x${comboMultiplier}`, cssW / 2, HUD_Y + 30*S);
+// Powerup timers right-aligned
+ctx.textAlign = 'right';
+if (shieldTimer > 0) ctx.fillText(`Shield: ${Math.ceil(shieldTimer)}s`, cssW - 20, HUD_Y + 30*S);
+if (slowMoTimer > 0) ctx.fillText(`Slow: ${Math.ceil(slowMoTimer)}s`, cssW - 20, HUD_Y + 60*S);
+if (multiplierTimer > 0) ctx.fillText(`x2: ${Math.ceil(multiplierTimer)}s`, cssW - 20, HUD_Y + 90*S);
+if (LAST_ERR) {
+ctx.textAlign = 'left';
+ctx.font = `${Math.round(14*S)}px monospace`;
+ctx.fillStyle = '#f55';
+const msg = LAST_ERR.split('\n')[0].slice(0, 80);
+ctx.fillText(`ERR: ${msg}`, 12, cssH - 18*S); // one-line red banner
+}
+}
+const shopItems = [
+{ name: 'Boost +20%', cost: 500, key: 'boost', max: 1 },
+{ name: 'Gravity -10%', cost: 1000, key: 'gravity', max: 1 },
+{ name: 'Coin Magnet', cost: 750, key: 'magnet', max: 1 },
+{ name: 'Extra Life', cost: 500, key: 'lives', max: 2 },
+{ name: 'Skin 1', cost: 300, key: 'skin1', max: 1 },
+{ name: 'Skin 2', cost: 300, key: 'skin2', max: 1 },
+{ name: 'Skin 3', cost: 300, key: 'skin3', max: 1 },
+];
+function handleShopTap(x, y) {
+if (state !== 'menu') return false;
+const itemH = 40 * S;
+const shopY = cssH * 0.6;
+for (let i = 0; i < shopItems.length; i++) {
+const itemY = shopY + i * itemH;
+const inRow = (x > cssW * 0.2 && x < cssW * 0.8 && y > itemY && y < itemY + itemH);
+if (!inRow) continue;
+const item = shopItems[i];
+const owned = (upgrades[item.key] || 0);
+if (coinCount >= item.cost && owned < item.max) {
+coinCount -= item.cost;
+upgrades[item.key] = owned + 1;
+try {
+localStorage.setItem('PZ_COINS', coinCount);
+} catch {}
+try {
+localStorage.setItem('PZ_UPGRADES', JSON.stringify(upgrades));
+} catch {}
+applyUpgrades();
+if (item.key.startsWith('skin')) {
+currentSkin = parseInt(item.key.slice(4), 10);
+try {
+localStorage.setItem('PZ_SKIN', currentSkin);
+} catch {}
+}
+playSound('tap');
+} else {
+// tapped a shop row but didn’t purchase — still consume the tap so the game doesn’t start
+playSound('tap');
+}
+return true; // IMPORTANT: tapping any shop row should not start the game
+}
+return false;
+}
+function drawOverlay(){
+ctx.fillStyle='#fff';
+ctx.textAlign='center';
+if (state==='menu'){
+const TOP_Y = Math.round(20 * S);
+const SECOND_Y = Math.round(50 * S);
+// Top left: high score
+ctx.font = FONT.menuSmall;
+ctx.textAlign = 'left';
+ctx.fillText('HIGH SCORE', 20 * S, TOP_Y);
+ctx.fillText(best, 20 * S, SECOND_Y);
+// Top middle: Power level (sum of upgrade levels)
+ctx.textAlign = 'center';
+ctx.fillText('Power', cssW/2, TOP_Y);
+const powerLevel = Object.values(upgrades).reduce((a, b) => a + b, 0);
+ctx.fillText(powerLevel, cssW/2, SECOND_Y);
+// Top right: current score big (kept, but scaled by S)
+ctx.font = FONT.menuBig;
+ctx.textAlign = 'right';
+ctx.fillText(score, cssW - 20 * S, TOP_Y);
+// Middle: Start Game
+ctx.font = FONT.menuMed;
+ctx.fillStyle = '#fff';
+ctx.textAlign = 'center';
+ctx.fillText('Start Game', cssW/2, cssH*0.4);
+const btnW = 200*S, btnH = 60*S;
+const btnX = cssW/2 - btnW/2, btnY = cssH*0.45;
+ctx.fillStyle = '#00ff00';
+roundRectPath(btnX, btnY, btnW, btnH, 20*S);
+ctx.fill();
+// Arrow inside button
+ctx.fillStyle = '#000';
+const ax = btnX + btnW*0.6, ay = btnY + btnH/2;
+ctx.beginPath();
+ctx.moveTo(ax - 18*S, ay - 12*S);
+ctx.lineTo( ax + 18*S, ay);
+ctx.lineTo( ax - 18*S, ay + 12*S);
+ctx.closePath();
+ctx.fill();
+// Shop
+ctx.fillStyle = '#fff';
+ctx.font = FONT.menuSmall;
+ctx.textAlign = 'center';
+ctx.fillText(`Coins: ${coinCount}`, cssW/2, cssH*0.55);
+ctx.fillText('Shop', cssW/2, cssH*0.58);
+const itemH = 40 * S;
+for (let i = 0; i < shopItems.length; i++) {
+const item = shopItems[i];
+const owned = upgrades[item.key] || 0;
+ctx.fillStyle = owned >= item.max ? '#888' : coinCount >= item.cost ? '#0f0' : '#f00';
+ctx.fillText(`${item.name} - ${item.cost} coins (${owned}/${item.max})`, cssW/2, cssH*0.6 + i * itemH);
+}
+// Daily Challenge
+ctx.fillStyle = dailyCompleted ? '#0f0' : '#fff';
+ctx.fillText(`Daily: Reach ${dailyGoal} pts for 200 coins ${dailyCompleted ? '(Done)' : ''}`, cssW/2, cssH*0.9);
+// Bottom right: Taygames™
+ctx.font = `${Math.round(20*S)}px monospace`;
+ctx.textAlign = 'right';
+ctx.fillStyle = '#fff';
+ctx.fillText('Taygames™', cssW - 20 * S, cssH - 30*S);
+} else if (state==='gameover'){
+ctx.fillStyle='rgba(0,0,0,0.7)';
+ctx.fillRect(0,0,cssW,cssH);
+ctx.fillStyle='#fff';
+ctx.textAlign='center';
+ctx.font=FONT.overTitle;
+ctx.fillText('Game Over', cssW*0.5, cssH*0.3);
+ctx.font=FONT.overMed;
+ctx.fillText(`Your Score: ${score}`, cssW*0.5, cssH*0.4);
+ctx.font=FONT.overSmall;
+ctx.fillText('Leaderboard', cssW*0.5, cssH*0.5);
+for (let i = 0; i < highscores.length; i++) {
+ctx.fillText(`${i+1}. ${highscores[i]}`, cssW*0.5, cssH*0.5 + 30*S + (i * 30*S));
+}
+if (highscores.length === 0) {
+ctx.fillText('No scores yet', cssW*0.5, cssH*0.5 + 30*S);
+}
+ctx.fillText('Tap to return to menu', cssW*0.5, cssH*0.7);
+}
+}
+function startGame(){
+state='playing';
+spawnTimer = spawnEvery * 0.6;
+coinSpawnTimer = Math.random() * 2 + 1;
+powerupSpawnTimer = Math.random() * 15 + 10;
+lives = maxLives;
+streak = 0;
+comboMultiplier = 1;
+checkDaily();
+}
+function resetGame(){
+obstacles=[];
+coins=[];
+powerups=[];
+score=0;
+spawnTimer=0;
+speed=150;
+spawnEvery=1.5;
+currentLevel=1;
+levelDisplayTimer=0;
+levelDisplayAlpha=0;
+player.y = cssH*0.5;
+player.vy=0;
+trail=[];
+flashAlpha=0;
+isBoosting = false;
+pressed.clear();
+shieldTimer = 0;
+slowMoTimer = 0;
+multiplierTimer = 0;
+}
+// ---------- loop ----------
+let lastTime = performance.now();
+function loop(now){
+try{
+let dt = (now - lastTime)/1000;
+lastTime = now;
+dt = Math.min(0.033, Math.max(0, dt));
+t += dt;
+// update
+if (state==='playing'){
+player.vy += GRAVITY * dt;
+if (isBoosting) player.vy -= BOOST_ACCEL * dt;
+player.vy *= AIR_DRAG;
+if (player.vy > MAX_FALL) player.vy = MAX_FALL;
+if (player.vy < MAX_RISE) player.vy = MAX_RISE;
+player.y += player.vy * dt;
+if (player.y - player.r < -1 || player.y + player.r > cssH + 1) hit();
+spawnTimer += dt;
+if (spawnTimer >= spawnEvery){
+spawnTimer = 0;
+if (obstacles.length < 8) spawnObstacle();
+}
+coinSpawnTimer -= dt;
+if (coinSpawnTimer <= 0) {
+spawnCoin();
+coinSpawnTimer = Math.random() * 3 + 1;
+}
+powerupSpawnTimer -= dt;
+if (powerupSpawnTimer <= 0) {
+spawnPowerup();
+powerupSpawnTimer = Math.random() * 15 + 10;
+}
+updateObstacles(dt);
+updateCoins(dt);
+updatePowerups(dt);
+updateTrail();
+updateLevelDisplay(dt);
+updateParticles(dt);
+}
+// draw
+ctx.fillStyle='#000';
+ctx.fillRect(0,0,cssW,cssH);
+updateStars(dt);
+drawStars(starsA,0.5);
+drawStars(starsB,0.9);
+drawObstacles();
+drawCoins();
+drawPowerups();
+drawTrail();
+drawShip();
+drawParticles();
+drawHUD();
+if (state!=='playing') drawOverlay();
+updateFlash();
+drawFlash();
+drawLevelDisplay();
+}catch(e){
+LAST_ERR = (e && e.stack) || String(e);
+console.error('Loop error', e);
+}
+requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+</script>
+<script>
+if ('serviceWorker' in navigator) {
+navigator.serviceWorker.register('sw.js').catch(()=>{});
+}
+</script>
 </body>
 </html>
