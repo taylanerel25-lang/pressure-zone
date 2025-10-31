@@ -140,7 +140,7 @@ pressed.clear();
 pressed.add(e.pointerId);
 isBoosting = true;
 playSound('tap');
-vib([80, 20, 40]);  // Thrust pulse – empowering!
+vib([80, 20, 40]); // Thrust pulse – empowering!
 return;
 } else if (state === 'shop') {
 if (handleShopTap(x, y)) return;
@@ -156,7 +156,7 @@ return;
 pressed.add(e.pointerId);
 isBoosting = true;
 playSound('tap');
-vib([80, 20, 40]);  // Thrust pulse – empowering!
+vib([80, 20, 40]); // Thrust pulse – empowering!
 }, { passive:false });
 for (const ev of ['pointerup','pointercancel','pointerleave']) {
 canvas.addEventListener(ev, e => {
@@ -180,7 +180,7 @@ state = 'menu';
 }
 isBoosting = true;
 playSound('tap');
-vib([80, 20, 40]);  // Thrust pulse – empowering!
+vib([80, 20, 40]); // Thrust pulse – empowering!
 }
 });
 addEventListener('keyup', (e) => {
@@ -510,8 +510,8 @@ const isVisible = obsLeft < cssW && obsRight > 0;
 if (isVisible && rectCircleOverlap(obsLeft, o.y - o.height/2, o.width, o.height, player.x, player.y, player.r)) {
 if (shieldTimer > 0) {
 obstacles.splice(i, 1);
-addParticles(player.x, player.y, 25, '#00ffff');  // Beefier!
-vib([60, 30, 60]);  // Deflect thrum – invincible flex.
+addParticles(player.x, player.y, 25, '#00ffff'); // Beefier!
+vib([60, 30, 60]); // Deflect thrum – invincible flex.
 continue;
 }
 hit();
@@ -526,7 +526,7 @@ if (!o._crossed && ((o.dir > 0 && prevObsLeft <= playerRight && obsLeft > player
 o._crossed = true;
 score += comboMultiplier;
 playSound('pass');
-vib(15);  // Quick "nailed it" nod.
+vib(15); // Quick "nailed it" nod.
 streak++;
 comboMultiplier = 1 + Math.floor(streak / 5) * 0.5;
 if (score > best) {
@@ -562,7 +562,7 @@ if (lives <= 0) {
 gameOver();
 } else {
 playSound('die');
-vib([150, 50, 100]);  // Wake-up shake – "Learn & retry!"
+vib([150, 50, 100]); // Wake-up shake – "Learn & retry!"
 }
 }
 function updateCoins(dt) {
@@ -584,8 +584,8 @@ if (circleOverlap(player.x, player.y, player.r, c.x, c.y, c.r)) {
 coins.splice(i, 1);
 coinCount++;
 playSound('coin');
-addParticles(c.x, c.y, 8, '#ffd700');  // Upped from 5 for sparkle!
-vib(25);  // Happy tingle – chase more!
+addParticles(c.x, c.y, 8, '#ffd700'); // Upped from 5 for sparkle!
+vib(25); // Happy tingle – chase more!
 }
 }
 }
@@ -599,8 +599,8 @@ const p = powerups[i];
 if (circleOverlap(player.x, player.y, player.r, p.x, p.y, p.r)) {
 powerups.splice(i, 1);
 playSound('powerup');
-addParticles(p.x, p.y, 15, '#00ff00');  // Extra burst!
-vib([100]);  // Power surge – god mode vibes.
+addParticles(p.x, p.y, 15, '#00ff00'); // Extra burst!
+vib([100]); // Power surge – god mode vibes.
 if (p.type === 'shield') shieldTimer = 5;
 if (p.type === 'slowmo') slowMoTimer = 3;
 if (p.type === 'multiplier') multiplierTimer = 10;
@@ -851,6 +851,11 @@ ctx.fillStyle = '#000';
 ctx.font = FONT.menuMed;
 ctx.textAlign = 'center';
 ctx.fillText('Shop', cssW/2, shopBtnY + 30*S);
+// Coins
+ctx.fillStyle = '#fff';
+ctx.font = FONT.menuSmall;
+ctx.textAlign = 'center';
+ctx.fillText(`Coins: ${coinCount}`, cssW/2, cssH*0.65);
 // Daily Challenge
 ctx.fillStyle = dailyCompleted ? '#0f0' : '#fff';
 ctx.fillText(`Daily: Reach ${dailyGoal} pts for 200 coins ${dailyCompleted ? '(Done)' : ''}`, cssW/2, cssH*0.9);
@@ -863,16 +868,12 @@ ctx.fillText('Taygames™', cssW - 20 * S, cssH - 30*S);
 ctx.fillStyle = '#fff';
 ctx.font = FONT.menuMed;
 ctx.textAlign = 'center';
-ctx.fillText('Shop', cssW/2, cssH*0.2);
-ctx.font = FONT.menuSmall;
-ctx.fillText(`Coins: ${coinCount}`, cssW/2, cssH*0.25);
 const itemH = 40 * S;
 const shopY = cssH * 0.3;
 for (let i = 0; i < shopItems.length; i++) {
 const item = shopItems[i];
 const owned = upgrades[item.key] || 0;
 ctx.fillStyle = owned >= item.max ? '#888' : coinCount >= item.cost ? '#0f0' : '#f00';
-ctx.fillText(`${item.name} - ${item.cost} coins (${owned}/${item.max})`, cssW/2, shopY + i * itemH);
 }
 // Back button
 const backBtnW = 200*S, backBtnH = 60*S;
@@ -883,7 +884,6 @@ ctx.fill();
 ctx.fillStyle = '#fff';
 ctx.font = FONT.menuMed;
 ctx.textAlign = 'center';
-ctx.fillText('Back', cssW/2, backBtnY + 30*S);
 } else if (state==='gameover'){
 ctx.fillStyle='rgba(0,0,0,0.7)';
 ctx.fillRect(0,0,cssW,cssH);
@@ -913,6 +913,7 @@ lives = maxLives;
 streak = 0;
 comboMultiplier = 1;
 checkDaily();
+bgMusic.currentTime = 0;
 updateMusic();
 }
 function resetGame(){
