@@ -132,13 +132,16 @@ toggleMute();
 return;
 }
 if (state === 'menu') {
-// Check if tapping shop buttons
-if (handleShopTap(x, y)) return;
+if (handleMenuTap(x, y)) return;
 resetGame();
 startGame();
 pressed.clear();
 pressed.add(e.pointerId);
 isBoosting = true;
+playSound('tap');
+return;
+} else if (state === 'shop') {
+if (handleShopTap(x, y)) return;
 playSound('tap');
 return;
 } else if (state === 'gameover') {
@@ -705,10 +708,27 @@ const shopItems = [
 { name: 'Skin 2', cost: 300, key: 'skin2', max: 1 },
 { name: 'Skin 3', cost: 300, key: 'skin3', max: 1 },
 ];
+function handleMenuTap(x, y) {
+const startBtnW = 200*S, startBtnH = 60*S;
+const startBtnX = cssW/2 - startBtnW/2, startBtnY = cssH*0.45;
+if (x > startBtnX && x < startBtnX + startBtnW && y > startBtnY && y < startBtnY + startBtnH) {
+resetGame();
+startGame();
+playSound('tap');
+return true;
+}
+const shopBtnW = 200*S, shopBtnH = 60*S;
+const shopBtnX = cssW/2 - shopBtnW/2, shopBtnY = cssH*0.55;
+if (x > shopBtnX && x < shopBtnX + shopBtnW && y > shopBtnY && y < shopBtnY + shopBtnH) {
+state = 'shop';
+playSound('tap');
+return true;
+}
+return false;
+}
 function handleShopTap(x, y) {
-if (state !== 'menu') return false;
 const itemH = 40 * S;
-const shopY = cssH * 0.6;
+const shopY = cssH * 0.3;
 for (let i = 0; i < shopItems.length; i++) {
 const itemY = shopY + i * itemH;
 const inRow = (x > cssW * 0.2 && x < cssW * 0.8 && y > itemY && y < itemY + itemH);
@@ -732,11 +752,19 @@ localStorage.setItem('PZ_SKIN', currentSkin);
 } catch {}
 }
 playSound('tap');
+return true;
 } else {
-// tapped a shop row but didn’t purchase — still consume the tap so the game doesn’t start
 playSound('tap');
+return true;
 }
-return true; // IMPORTANT: tapping any shop row should not start the game
+}
+// Back button
+const backBtnW = 200*S, backBtnH = 60*S;
+const backBtnX = cssW/2 - backBtnW/2, backBtnY = cssH*0.8;
+if (x > backBtnX && x < backBtnX + backBtnW && y > backBtnY && y < backBtnY + backBtnH) {
+state = 'menu';
+playSound('tap');
+return true;
 }
 return false;
 }
@@ -765,33 +793,40 @@ ctx.font = FONT.menuMed;
 ctx.fillStyle = '#fff';
 ctx.textAlign = 'center';
 ctx.fillText('Start Game', cssW/2, cssH*0.4);
-const btnW = 200*S, btnH = 60*S;
-const btnX = cssW/2 - btnW/2, btnY = cssH*0.45;
+const startBtnW = 200*S, startBtnH = 60*S;
+const startBtnX = cssW/2 - startBtnW/2, startBtnY = cssH*0.45;
 ctx.fillStyle = '#00ff00';
-roundRectPath(btnX, btnY, btnW, btnH, 20*S);
+roundRectPath(startBtnX, startBtnY, startBtnW, startBtnH, 20*S);
 ctx.fill();
 // Arrow inside button
 ctx.fillStyle = '#000';
-const ax = btnX + btnW*0.6, ay = btnY + btnH/2;
+const ax = startBtnX + startBtnW*0.6, ay = startBtnY + startBtnH/2;
 ctx.beginPath();
 ctx.moveTo(ax - 18*S, ay - 12*S);
 ctx.lineTo( ax + 18*S, ay);
 ctx.lineTo( ax - 18*S, ay + 12*S);
 ctx.closePath();
 ctx.fill();
-// Shop
+// Shop button
+ctx.fillStyle = '#fff';
+ctx.font = FONT.menuMed;
+ctx.textAlign = 'center';
+ctx.fillText('Shop', cssW/2, cssH*0.5);
+const shopBtnW = 200*S, shopBtnH = 60*S;
+const shopBtnX = cssW/2 - shopBtnW/2, shopBtnY = cssH*0.55;
+ctx.fillStyle = '#00ff00';
+roundRectPath(shopBtnX, shopBtnY, shopBtnW, shopBtnH, 20*S);
+ctx.fill();
+// Arrow inside shop button (optional, or text)
+ctx.fillStyle = '#000';
+ctx.font = FONT.menuMed;
+ctx.textAlign = 'center';
+ctx.fillText('Shop', cssW/2, shopBtnY + 30*S);
+// Coins
 ctx.fillStyle = '#fff';
 ctx.font = FONT.menuSmall;
 ctx.textAlign = 'center';
-ctx.fillText(`Coins: ${coinCount}`, cssW/2, cssH*0.55);
-ctx.fillText('Shop', cssW/2, cssH*0.58);
-const itemH = 40 * S;
-for (let i = 0; i < shopItems.length; i++) {
-const item = shopItems[i];
-const owned = upgrades[item.key] || 0;
-ctx.fillStyle = owned >= item.max ? '#888' : coinCount >= item.cost ? '#0f0' : '#f00';
-ctx.fillText(`${item.name} - ${item.cost} coins (${owned}/${item.max})`, cssW/2, cssH*0.6 + i * itemH);
-}
+ctx.fillText(`Coins: ${coinCount}`, cssW/2, cssH*0.65);
 // Daily Challenge
 ctx.fillStyle = dailyCompleted ? '#0f0' : '#fff';
 ctx.fillText(`Daily: Reach ${dailyGoal} pts for 200 coins ${dailyCompleted ? '(Done)' : ''}`, cssW/2, cssH*0.9);
@@ -800,6 +835,31 @@ ctx.font = `${Math.round(20*S)}px monospace`;
 ctx.textAlign = 'right';
 ctx.fillStyle = '#fff';
 ctx.fillText('Taygames™', cssW - 20 * S, cssH - 30*S);
+} else if (state === 'shop') {
+ctx.fillStyle = '#fff';
+ctx.font = FONT.menuMed;
+ctx.textAlign = 'center';
+ctx.fillText('Shop', cssW/2, cssH*0.2);
+ctx.font = FONT.menuSmall;
+ctx.fillText(`Coins: ${coinCount}`, cssW/2, cssH*0.25);
+const itemH = 40 * S;
+const shopY = cssH * 0.3;
+for (let i = 0; i < shopItems.length; i++) {
+const item = shopItems[i];
+const owned = upgrades[item.key] || 0;
+ctx.fillStyle = owned >= item.max ? '#888' : coinCount >= item.cost ? '#0f0' : '#f00';
+ctx.fillText(`${item.name} - ${item.cost} coins (${owned}/${item.max})`, cssW/2, shopY + i * itemH);
+}
+// Back button
+const backBtnW = 200*S, backBtnH = 60*S;
+const backBtnX = cssW/2 - backBtnW/2, backBtnY = cssH*0.8;
+ctx.fillStyle = '#ff0000';
+roundRectPath(backBtnX, backBtnY, backBtnW, backBtnH, 20*S);
+ctx.fill();
+ctx.fillStyle = '#fff';
+ctx.font = FONT.menuMed;
+ctx.textAlign = 'center';
+ctx.fillText('Back', cssW/2, backBtnY + 30*S);
 } else if (state==='gameover'){
 ctx.fillStyle='rgba(0,0,0,0.7)';
 ctx.fillRect(0,0,cssW,cssH);
