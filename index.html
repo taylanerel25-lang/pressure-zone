@@ -1094,29 +1094,32 @@ bgMusic.currentTime = 0;
 updateMusic();
 }
 function resetGame(){
-obstacles=[];
-coins=[];
-powerups=[];
-boss = null;
-bossBullets = [];
-bossShootTimer = 0;
-score=0;
-spawnTimer=0;
-speed=150;
-spawnEvery=1.5;
-currentLevel=1;
-levelDisplayTimer=0;
-levelDisplayAlpha=0;
-player.y = cssH*0.5;
-player.vy=0;
-trail=[];
-flashAlpha=0;
-isBoosting = false;
-pressed.clear();
-shieldTimer = 0;
-slowMoTimer = 0;
-multiplierTimer = 0;
-updateMusic();
+  obstacles=[];
+  coins=[];
+  powerups=[];
+  boss = null;
+  bossBullets = [];
+  bossShootTimer = 0;
+  score=0;
+  spawnTimer=0;
+  speed=150;
+  spawnEvery=1.5;
+  currentLevel=1;
+  levelDisplayTimer=0;
+  levelDisplayAlpha=0;
+  player.y = cssH*0.5;
+  player.vy=0;
+  trail=[];
+  flashAlpha=0;
+  isBoosting = false;
+  pressed.clear();
+  shieldTimer = 0;
+  slowMoTimer = 0;
+  multiplierTimer = 0;
+
+  bossSpawnedAtLevel2 = false; // <-- allow plane to appear next run
+
+  updateMusic();
 }
 // ---------- loop ----------
 let lastTime = performance.now();
