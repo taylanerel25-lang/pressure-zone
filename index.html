@@ -419,6 +419,7 @@ let powerups = [];
 let boss = null;
 let bossBullets = [];
 let bossShootTimer = 0;
+let bossSpawnedAtLevel2 = false; // NEW: prevents multiple spawns at L2
 let score = 0;
 let coinCount = 0;
 try {
@@ -509,100 +510,142 @@ const y = Math.random() * cssH;
 powerups.push({ type, x, y, r: 15 * S });
 }
 function updateBoss(dt) {
-if (boss) {
-let currentSpeed = speed;
-if (slowMoTimer > 0) currentSpeed *= 0.5;
-boss.timer -= dt;
-if (boss.timer <= 0) {
-boss.flyingAway = true;
-}
-if (boss.flyingAway) {
-boss.x += currentSpeed * dt;
-if (boss.x > cssW + boss.width / 2) {
-boss = null;
-currentLevel++;
-levelDisplayTimer = 2;
-levelDisplayAlpha = 1;
-spawnTimer = 0;
-coinSpawnTimer = Math.random() * 3 + 1;
-powerupSpawnTimer = Math.random() * 15 + 10;
-return;
-}
-} else {
-if (boss.state === 'flyingIn') {
-boss.x -= currentSpeed * 0.4 * dt; // Slower fly-in
-if (boss.x <= cssW - boss.width / 2 - 100 * S) {
-boss.state = 'searching';
-boss.searchTimer = 3; // 3 seconds searching
-boss.yTarget = rand(SAFE_MARGIN_Y + boss.height / 2, cssH - SAFE_MARGIN_Y - boss.height / 2);
-}
-} else if (boss.state === 'searching') {
-boss.y += (boss.yTarget - boss.y) * 0.1;
-boss.searchTimer -= dt;
-if (boss.searchTimer <= 0) {
-boss.state = 'positioned';
-}
-} else if (boss.state === 'positioned') {
-boss.y += (player.y - boss.y) * 0.02; // 60% slower pursuit
-boss.y += Math.sin(t * boss.freq + boss.seed) * boss.amp * dt;
-boss.y = Math.max(boss.height / 2 + SAFE_MARGIN_Y, Math.min(cssH - boss.height / 2 - SAFE_MARGIN_Y, boss.y));
-}
-bossShootTimer += dt;
-if (bossShootTimer >= 1 && boss.state === 'positioned') {
-bossShootTimer = 0;
-bossBullets.push({ x: boss.x - boss.width / 2, y: boss.y, vx: -speed * 1.5, r: 5 * S, _crossed: false });
-}
-}
-for (let i = bossBullets.length - 1; i >= 0; i--) {
-const b = bossBullets[i];
-b.x += b.vx * dt;
-if (b.x < -10) {
-bossBullets.splice(i, 1);
-continue;
-}
-if (circleOverlap(player.x, player.y, player.r, b.x, b.y, b.r)) {
-if (shieldTimer > 0) {
-bossBullets.splice(i, 1);
-addParticles(player.x, player.y, 25, '#00ffff');
-vib([60, 30, 60]);
-continue;
-}
-addParticles(player.x, player.y, 10, '#ff0000');
-flashStart = performance.now();
-flashAlpha = 0.35;
-bossBullets.splice(i, 1);
-gameOver(); // Instant death on bullet hit
-}
-if (!b._crossed && b.x < player.x - player.r) {
-b._crossed = true;
-score += comboMultiplier;
-playSound('pass');
-vib(15);
-streak++;
-comboMultiplier = 1 + Math.floor(streak / 5) * 0.5;
-if (score > best) {
-best = score;
-}
-if (score % 10 === 0) {
-currentLevel++;
-levelDisplayTimer = 2;
-levelDisplayAlpha = 1;
-speed = Math.min(300, speed + 10);
-spawnEvery = Math.max(1.0, spawnEvery - 0.05);
-}
-if (!dailyCompleted && score >= dailyGoal) {
-dailyCompleted = true;
-coinCount += 200;
-try {
-localStorage.setItem('PZ_COINS', coinCount);
-} catch {}
-try {
-localStorage.setItem('PZ_DAILY', JSON.stringify({date: lastDailyDate, completed: true}));
-} catch {}
-}
-}
-}
-}
+  if (!boss) return;
+
+  let currentSpeed = speed;
+  if (slowMoTimer > 0) currentSpeed *= 0.5;
+
+  boss.timer -= dt;
+
+  switch (boss.state) {
+    case 'flyIn': {
+      const targetX = cssW * 0.7;
+      boss.x -= currentSpeed * 0.6 * dt;
+      if (boss.x <= targetX) {
+        boss.x = targetX;
+        boss.state = 'search';
+        boss.searchTimer = 2.0;
+        boss.yTarget = rand(SAFE_MARGIN_Y + boss.height/2, cssH - SAFE_MARGIN_Y - boss.height/2);
+      }
+      break;
+    }
+
+    case 'search': {
+      boss.y += (boss.yTarget - boss.y) * 0.12;
+      if (Math.abs(boss.y - boss.yTarget) < 4) {
+        boss.yTarget = rand(SAFE_MARGIN_Y + boss.height/2, cssH - SAFE_MARGIN_Y - boss.height/2);
+      }
+      boss.searchTimer -= dt;
+      if (boss.searchTimer <= 0) {
+        boss.lockY = player.y;     // lock target
+        boss.flashTimer = 0.6;     // flash red
+        boss.state = 'lock';
+      }
+      break;
+    }
+
+    case 'lock': {
+      boss.flashTimer -= dt;
+      if (boss.flashTimer <= 0) {
+        boss.state = 'dashRight';
+      }
+      break;
+    }
+
+    case 'dashRight': {
+      const targetX = cssW - boss.width / 2 - 6 * S;
+      boss.x += currentSpeed * 1.2 * dt;
+      if (boss.x >= targetX) {
+        boss.x = targetX;
+        boss.state = 'attack';
+        bossShootTimer = 0;
+      }
+      break;
+    }
+
+    case 'attack': {
+      // no following; just wobble
+      boss.y += Math.sin(t * 2 + boss.seed) * 30 * dt;
+      boss.y = Math.max(boss.height/2 + SAFE_MARGIN_Y,
+                        Math.min(cssH - boss.height/2 - SAFE_MARGIN_Y, boss.y));
+
+      // shoot at locked Y
+      bossShootTimer += dt;
+      if (bossShootTimer >= 0.8) {
+        bossShootTimer = 0;
+        bossBullets.push({
+          x: boss.x - boss.width / 2,
+          y: boss.lockY ?? boss.y,
+          vx: -(speed * 1.7),
+          r: 5 * S,
+          _crossed: false
+        });
+      }
+      break;
+    }
+
+    case 'flyingAway': {
+      boss.x += currentSpeed * 1.2 * dt;
+      if (boss.x > cssW + boss.width / 2) {
+        boss = null;
+        spawnTimer = 0;
+        coinSpawnTimer = Math.random() * 3 + 1;
+        powerupSpawnTimer = Math.random() * 15 + 10;
+      }
+      break;
+    }
+  }
+
+  // leave after 10s total
+  if (boss && boss.timer <= 0 && boss.state !== 'flyingAway') {
+    boss.state = 'flyingAway';
+  }
+
+  // bullets
+  for (let i = bossBullets.length - 1; i >= 0; i--) {
+    const b = bossBullets[i];
+    b.x += b.vx * dt;
+
+    if (b.x < -10) { bossBullets.splice(i, 1); continue; }
+
+    if (circleOverlap(player.x, player.y, player.r, b.x, b.y, b.r)) {
+      if (shieldTimer > 0) {
+        bossBullets.splice(i, 1);
+        addParticles(player.x, player.y, 25, '#00ffff');
+        vib([60, 30, 60]);
+        continue;
+      }
+      addParticles(player.x, player.y, 10, '#ff0000');
+      flashStart = performance.now();
+      flashAlpha = 0.35;
+      bossBullets.splice(i, 1);
+      gameOver();
+      continue;
+    }
+
+    if (!b._crossed && b.x < player.x - player.r) {
+      b._crossed = true;
+      score += comboMultiplier;
+      playSound('pass');
+      vib(15);
+      streak++;
+      comboMultiplier = 1 + Math.floor(streak / 5) * 0.5;
+      if (score > best) best = score;
+      if (score % 10 === 0) {
+        currentLevel++;
+        levelDisplayTimer = 2;
+        levelDisplayAlpha = 1;
+        speed = Math.min(300, speed + 10);
+        spawnEvery = Math.max(1.0, spawnEvery - 0.05);
+      }
+      if (!dailyCompleted && score >= dailyGoal) {
+        dailyCompleted = true;
+        coinCount += 200;
+        try { localStorage.setItem('PZ_COINS', coinCount); } catch {}
+        try { localStorage.setItem('PZ_DAILY', JSON.stringify({date: lastDailyDate, completed: true})); } catch {}
+      }
+    }
+  }
 }
 function updateObstacles(dt){
 let currentSpeed = speed;
@@ -744,17 +787,26 @@ ctx.restore();
 }
 }
 function drawBoss() {
-if (boss) {
-const ready = bossImage && bossImage.complete && bossImage.naturalWidth > 0;
-const baseX = boss.x - boss.width / 2;
-const py = boss.y - boss.height / 2;
-if (ready) {
-ctx.drawImage(bossImage, baseX, py, boss.width, boss.height);
-} else {
-ctx.fillStyle = '#f00';
-ctx.fillRect(baseX, py, boss.width, boss.height);
-}
-}
+  if (!boss) return;
+  const ready = bossImage && bossImage.complete && bossImage.naturalWidth > 0;
+  const baseX = boss.x - boss.width / 2;
+  const py = boss.y - boss.height / 2;
+
+  if (ready) {
+    ctx.drawImage(bossImage, baseX, py, boss.width, boss.height);
+  } else {
+    ctx.fillStyle = '#f00';
+    ctx.fillRect(baseX, py, boss.width, boss.height);
+  }
+
+  // Red flash on lock
+  if (boss.flashTimer > 0) {
+    ctx.save();
+    ctx.globalAlpha = 0.35;
+    ctx.fillStyle = '#ff0000';
+    ctx.fillRect(baseX, py, boss.width, boss.height);
+    ctx.restore();
+  }
 }
 function drawBossBullets() {
 ctx.fillStyle = '#f00';
@@ -1083,14 +1135,29 @@ if (player.vy > MAX_FALL) player.vy = MAX_FALL;
 if (player.vy < MAX_RISE) player.vy = MAX_RISE;
 player.y += player.vy * dt;
 if (player.y - player.r < -1 || player.y + player.r > cssH + 1) hit();
-if (currentLevel === 3 && !boss) {
-obstacles = [];
-coins = [];
-powerups = [];
-boss = { x: cssW + 200 * S, y: cssH / 2, width: 200 * S, height: 100 * S, timer: 30, flyingAway: false, seed: Math.random() * Math.PI * 2, freq: rand(2, 5), amp: rand(50, 100), state: 'flyingIn', searchTimer: 0, yTarget: 0 };
-spawnTimer = Infinity;
-coinSpawnTimer = Infinity;
-powerupSpawnTimer = Infinity;
+// GOVERNMENT PLANE appears at Level 2
+if (currentLevel === 2 && !boss && !bossSpawnedAtLevel2) {
+  obstacles = [];
+  coins = [];
+  powerups = [];
+  const bw = 220 * S, bh = 90 * S;
+  boss = {
+    x: cssW + bw,                 // offscreen right
+    y: cssH / 2,
+    width: bw,
+    height: bh,
+    timer: 10,                    // stays 10 seconds total
+    state: 'flyIn',               // flyIn -> search -> lock -> dashRight -> attack -> flyingAway
+    flashTimer: 0,
+    lockY: null,
+    seed: Math.random() * Math.PI * 2
+  };
+  bossSpawnedAtLevel2 = true;
+
+  // Pause normal spawns while plane is in play
+  spawnTimer = Infinity;
+  coinSpawnTimer = Infinity;
+  powerupSpawnTimer = Infinity;
 }
 if (boss) {
 updateBoss(dt);
