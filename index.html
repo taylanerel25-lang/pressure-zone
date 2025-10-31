@@ -521,12 +521,27 @@ boss = null;
 return;
 }
 } else {
+if (boss.state === 'flyingIn') {
+boss.x -= currentSpeed * dt;
+if (boss.x <= cssW - boss.width / 2 - 100 * S) {
+boss.state = 'searching';
+boss.searchTimer = 3; // 3 seconds searching
+boss.yTarget = rand(SAFE_MARGIN_Y + boss.height / 2, cssH - SAFE_MARGIN_Y - boss.height / 2);
+}
+} else if (boss.state === 'searching') {
+boss.y += (boss.yTarget - boss.y) * 0.1;
+boss.searchTimer -= dt;
+if (boss.searchTimer <= 0) {
+boss.state = 'positioned';
+}
+} else if (boss.state === 'positioned') {
 boss.y += (player.y - boss.y) * 0.05; // Slower pursuit for less exact following
 boss.y += Math.sin(t * boss.freq + boss.seed) * boss.amp * dt;
 boss.y = Math.max(boss.height / 2 + SAFE_MARGIN_Y, Math.min(cssH - boss.height / 2 - SAFE_MARGIN_Y, boss.y));
+}
 
 bossShootTimer += dt;
-if (bossShootTimer >= 1) {
+if (bossShootTimer >= 1 && boss.state === 'positioned') {
 bossShootTimer = 0;
 bossBullets.push({ x: boss.x - boss.width / 2, y: boss.y, vx: -speed * 1.5, r: 5 * S, _crossed: false });
 }
@@ -1080,7 +1095,7 @@ if (currentLevel === 3 && !boss) {
 obstacles = [];
 coins = [];
 powerups = [];
-boss = { x: cssW - 100 * S, y: cssH / 2, width: 200 * S, height: 100 * S, timer: 30, flyingAway: false, seed: Math.random() * Math.PI * 2, freq: rand(2, 5), amp: rand(50, 100) };
+boss = { x: cssW + 200 * S, y: cssH / 2, width: 200 * S, height: 100 * S, timer: 30, flyingAway: false, seed: Math.random() * Math.PI * 2, freq: rand(2, 5), amp: rand(50, 100), state: 'flyingIn', searchTimer: 0, yTarget: 0 };
 spawnTimer = Infinity;
 coinSpawnTimer = Infinity;
 powerupSpawnTimer = Infinity;
