@@ -118,6 +118,8 @@ shipImages[3] = new Image();
 shipImages[3].src = 'bddfc93e9029274b3b6a188f3147a42a.jpg'; // skin 3
 let bossImage = new Image();
 bossImage.src = 'Space Gov Agency.png';
+let playButtonImage = new Image();
+playButtonImage.src = '41f2686b-18ee-428c-b580-24d56dcf2d22.png';
 let currentSkin = 0;
 try {
 currentSkin = parseInt(localStorage.getItem('PZ_SKIN') || '0', 10);
@@ -541,18 +543,16 @@ if (boss.searchTimer <= 0) {
 boss.state = 'positioned';
 }
 } else if (boss.state === 'positioned') {
-boss.y += (player.y - boss.y) * 0.02; // 60% slower pursuit (0.05 * 0.4)
+boss.y += (player.y - boss.y) * 0.02; // 60% slower pursuit
 boss.y += Math.sin(t * boss.freq + boss.seed) * boss.amp * dt;
 boss.y = Math.max(boss.height / 2 + SAFE_MARGIN_Y, Math.min(cssH - boss.height / 2 - SAFE_MARGIN_Y, boss.y));
 }
-
 bossShootTimer += dt;
 if (bossShootTimer >= 1 && boss.state === 'positioned') {
 bossShootTimer = 0;
 bossBullets.push({ x: boss.x - boss.width / 2, y: boss.y, vx: -speed * 1.5, r: 5 * S, _crossed: false });
 }
 }
-
 for (let i = bossBullets.length - 1; i >= 0; i--) {
 const b = bossBullets[i];
 b.x += b.vx * dt;
@@ -955,26 +955,12 @@ ctx.fillText(score, cssW - 20 * S, TOP_Y);
 ctx.font = FONT.menuMed;
 ctx.fillStyle = '#fff';
 ctx.textAlign = 'center';
-ctx.fillText('Start Game', cssW/2, cssH*0.4);
 const startBtnW = 200*S, startBtnH = 60*S;
 const startBtnX = cssW/2 - startBtnW/2, startBtnY = cssH*0.45;
-ctx.fillStyle = '#00ff00';
-roundRectPath(startBtnX, startBtnY, startBtnW, startBtnH, 20*S);
-ctx.fill();
-// Arrow inside button
-ctx.fillStyle = '#000';
-const ax = startBtnX + startBtnW*0.6, ay = startBtnY + startBtnH/2;
-ctx.beginPath();
-ctx.moveTo(ax - 18*S, ay - 12*S);
-ctx.lineTo( ax + 18*S, ay);
-ctx.lineTo( ax - 18*S, ay + 12*S);
-ctx.closePath();
-ctx.fill();
+if (playButtonImage.complete && playButtonImage.naturalWidth > 0) {
+ctx.drawImage(playButtonImage, startBtnX, startBtnY, startBtnW, startBtnH);
+}
 // Shop button
-ctx.fillStyle = '#fff';
-ctx.font = FONT.menuMed;
-ctx.textAlign = 'center';
-ctx.fillText('Shop', cssW/2, cssH*0.5);
 const shopBtnW = 200*S, shopBtnH = 60*S;
 const shopBtnX = cssW/2 - shopBtnW/2, shopBtnY = cssH*0.55;
 ctx.fillStyle = '#00ff00';
