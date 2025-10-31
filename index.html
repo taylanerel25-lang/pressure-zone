@@ -536,10 +536,13 @@ function updateBoss(dt) {
         boss.yTarget = rand(SAFE_MARGIN_Y + boss.height/2, cssH - SAFE_MARGIN_Y - boss.height/2);
       }
       boss.searchTimer -= dt;
-      if (boss.searchTimer <= 0) {
-        boss.lockY = player.y;     // lock target
-        boss.flashTimer = 0.6;     // flash red
-        boss.state = 'lock';
+    if (boss.searchTimer <= 0) {
+  const minY = SAFE_MARGIN_Y + boss.height/2;
+  const maxY = cssH - SAFE_MARGIN_Y - boss.height/2;
+  boss.lockY = Math.max(minY, Math.min(maxY, player.y)); // lock target safely
+  boss.flashTimer = 0.6;                                  // flash red
+  boss.state = 'lock';
+}
       }
       break;
     }
