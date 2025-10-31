@@ -457,7 +457,7 @@ const seed = Math.random()*10;
 obstacles.push({ type: 'obstacle', dir, x, y, width, height, speed, seed, _crossed: false, imageIndex });
 }
 function spawnCoin() {
-const x = Math.random() * cssW;
+const x = player.x + (Math.random() - 0.5) * 100;
 const y = Math.random() * cssH;
 coins.push({ x, y, r: 10 * S });
 }
