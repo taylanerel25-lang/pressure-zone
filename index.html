@@ -518,11 +518,17 @@ if (boss.flyingAway) {
 boss.x += currentSpeed * dt;
 if (boss.x > cssW + boss.width / 2) {
 boss = null;
+currentLevel++;
+levelDisplayTimer = 2;
+levelDisplayAlpha = 1;
+spawnTimer = 0;
+coinSpawnTimer = Math.random() * 3 + 1;
+powerupSpawnTimer = Math.random() * 15 + 10;
 return;
 }
 } else {
 if (boss.state === 'flyingIn') {
-boss.x -= currentSpeed * dt;
+boss.x -= currentSpeed * 0.4 * dt; // Slower fly-in
 if (boss.x <= cssW - boss.width / 2 - 100 * S) {
 boss.state = 'searching';
 boss.searchTimer = 3; // 3 seconds searching
@@ -535,7 +541,7 @@ if (boss.searchTimer <= 0) {
 boss.state = 'positioned';
 }
 } else if (boss.state === 'positioned') {
-boss.y += (player.y - boss.y) * 0.05; // Slower pursuit for less exact following
+boss.y += (player.y - boss.y) * 0.02; // 60% slower pursuit (0.05 * 0.4)
 boss.y += Math.sin(t * boss.freq + boss.seed) * boss.amp * dt;
 boss.y = Math.max(boss.height / 2 + SAFE_MARGIN_Y, Math.min(cssH - boss.height / 2 - SAFE_MARGIN_Y, boss.y));
 }
