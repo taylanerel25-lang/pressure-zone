@@ -17,6 +17,7 @@ html,body,canvas{ -webkit-user-select:none; user-select:none; -webkit-touch-call
 </head>
 <body>
 <canvas id="canvas"></canvas>
+<audio id="bgMusic" src="Main song for Pressure Zone.mp3" loop></audio>
 <script>
 // --- SAFEMODE: work around Samsung Internet canvas scaling weirdness
 const isSamsung = /SamsungBrowser|SM-|SAMSUNG|Galaxy/i.test(navigator.userAgent);
@@ -139,6 +140,7 @@ pressed.clear();
 pressed.add(e.pointerId);
 isBoosting = true;
 playSound('tap');
+vib([80, 20, 40]);  // Thrust pulse – empowering!
 return;
 } else if (state === 'shop') {
 if (handleShopTap(x, y)) return;
@@ -154,6 +156,7 @@ return;
 pressed.add(e.pointerId);
 isBoosting = true;
 playSound('tap');
+vib([80, 20, 40]);  // Thrust pulse – empowering!
 }, { passive:false });
 for (const ev of ['pointerup','pointercancel','pointerleave']) {
 canvas.addEventListener(ev, e => {
@@ -177,6 +180,7 @@ state = 'menu';
 }
 isBoosting = true;
 playSound('tap');
+vib([80, 20, 40]);  // Thrust pulse – empowering!
 }
 });
 addEventListener('keyup', (e) => {
@@ -190,6 +194,7 @@ if (document.hidden) {
 isBoosting = false;
 pressed.clear();
 }
+updateMusic();
 });
 // ---------- physics / constants ----------
 let GRAVITY = 300; // reduced for easier control on mobile
@@ -221,6 +226,8 @@ let mute = false;
 try {
 mute = localStorage.getItem('PZ_MUTE') === 'true';
 } catch {}
+let bgMusic = document.getElementById('bgMusic');
+bgMusic.volume = 0.2; // low sound
 function ensureAudio(){
 if (!audioCtx){
 const A = window.AudioContext||window.webkitAudioContext;
@@ -250,6 +257,22 @@ function toggleMute(){
 mute=!mute;
 try{localStorage.setItem('PZ_MUTE', mute);}catch{}
 ensureAudio();
+updateMusic();
+}
+function updateMusic(){
+if (mute || state !== 'playing') {
+bgMusic.pause();
+} else {
+bgMusic.play().catch(e => console.log('Music autoplay blocked', e));
+}
+}
+// Haptic magic – feels the wins!
+let canVibrate = 'vibrate' in navigator;
+function vib(pattern = 50) {
+  if (canVibrate) {
+    // Patterns for flair: single buzz or [short, pause, long]
+    navigator.vibrate(pattern);
+  }
 }
 // ---------- stars ----------
 function updateStars(dt){
@@ -487,7 +510,8 @@ const isVisible = obsLeft < cssW && obsRight > 0;
 if (isVisible && rectCircleOverlap(obsLeft, o.y - o.height/2, o.width, o.height, player.x, player.y, player.r)) {
 if (shieldTimer > 0) {
 obstacles.splice(i, 1);
-addParticles(player.x, player.y, 20, '#00ffff');
+addParticles(player.x, player.y, 25, '#00ffff');  // Beefier!
+vib([60, 30, 60]);  // Deflect thrum – invincible flex.
 continue;
 }
 hit();
@@ -502,6 +526,7 @@ if (!o._crossed && ((o.dir > 0 && prevObsLeft <= playerRight && obsLeft > player
 o._crossed = true;
 score += comboMultiplier;
 playSound('pass');
+vib(15);  // Quick "nailed it" nod.
 streak++;
 comboMultiplier = 1 + Math.floor(streak / 5) * 0.5;
 if (score > best) {
@@ -537,6 +562,7 @@ if (lives <= 0) {
 gameOver();
 } else {
 playSound('die');
+vib([150, 50, 100]);  // Wake-up shake – "Learn & retry!"
 }
 }
 function updateCoins(dt) {
@@ -558,7 +584,8 @@ if (circleOverlap(player.x, player.y, player.r, c.x, c.y, c.r)) {
 coins.splice(i, 1);
 coinCount++;
 playSound('coin');
-addParticles(c.x, c.y, 5, '#ffd700');
+addParticles(c.x, c.y, 8, '#ffd700');  // Upped from 5 for sparkle!
+vib(25);  // Happy tingle – chase more!
 }
 }
 }
@@ -572,7 +599,8 @@ const p = powerups[i];
 if (circleOverlap(player.x, player.y, player.r, p.x, p.y, p.r)) {
 powerups.splice(i, 1);
 playSound('powerup');
-addParticles(p.x, p.y, 10, '#00ff00');
+addParticles(p.x, p.y, 15, '#00ff00');  // Extra burst!
+vib([100]);  // Power surge – god mode vibes.
 if (p.type === 'shield') shieldTimer = 5;
 if (p.type === 'slowmo') slowMoTimer = 3;
 if (p.type === 'multiplier') multiplierTimer = 10;
@@ -637,6 +665,7 @@ flashStart=performance.now();
 flashAlpha=0.35;
 isBoosting = false;
 pressed.clear();
+updateMusic();
 }
 function updateFlash(){
 if (flashAlpha>0){
@@ -889,6 +918,7 @@ lives = maxLives;
 streak = 0;
 comboMultiplier = 1;
 checkDaily();
+updateMusic();
 }
 function resetGame(){
 obstacles=[];
@@ -910,6 +940,7 @@ pressed.clear();
 shieldTimer = 0;
 slowMoTimer = 0;
 multiplierTimer = 0;
+updateMusic();
 }
 // ---------- loop ----------
 let lastTime = performance.now();
