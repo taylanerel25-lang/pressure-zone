@@ -17,7 +17,7 @@ html,body,canvas{ -webkit-user-select:none; user-select:none; -webkit-touch-call
 </head>
 <body>
 <canvas id="canvas"></canvas>
-<audio id="bgMusic" src="Main song for Pressure Zone.mp3" loop></audio>
+<audio id="bgMusic" src="Main song for Pressure Zone.mp3" loop preload="auto"></audio>
 <script>
 // --- SAFEMODE: work around Samsung Internet canvas scaling weirdness
 const isSamsung = /SamsungBrowser|SM-|SAMSUNG|Galaxy/i.test(navigator.userAgent);
@@ -159,6 +159,7 @@ pressed.add(e.pointerId);
 isBoosting = true;
 playSound('tap');
 vib([80, 20, 40]); // Thrust pulse – empowering!
+updateMusic(); // Ensure music plays on interaction
 }, { passive:false });
 for (const ev of ['pointerup','pointercancel','pointerleave']) {
 canvas.addEventListener(ev, e => {
@@ -183,6 +184,7 @@ state = 'menu';
 isBoosting = true;
 playSound('tap');
 vib([80, 20, 40]); // Thrust pulse – empowering!
+updateMusic(); // Ensure music plays on interaction
 }
 });
 addEventListener('keyup', (e) => {
@@ -236,6 +238,7 @@ const A = window.AudioContext||window.webkitAudioContext;
 if(!A)return;
 try{audioCtx=new A();}catch{audioCtx=null;}
 }
+if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
 }
 function playSound(type){
 if (mute || !audioCtx) return;
@@ -264,8 +267,15 @@ updateMusic();
 function updateMusic(){
 if (mute || state !== 'playing') {
 bgMusic.pause();
+bgMusic.currentTime = 0; // Reset to start for next play
 } else {
-bgMusic.play().catch(e => console.log('Music autoplay blocked', e));
+const playPromise = bgMusic.play();
+if (playPromise !== undefined) {
+playPromise.catch(e => {
+console.log('Music playback blocked; retrying on next interaction', e);
+// Retry on next user interaction (already handled in input events)
+});
+}
 }
 }
 // Haptic magic – feels the wins!
@@ -440,7 +450,7 @@ let dailyGoal = 150; // example
 let dailyCompleted = false;
 let lastDailyDate = '';
 try {
-const savedDaily = JSON.parse(localStorage.getItem('PZ_DAILY')) || {};
+const savedDaily = JSON.parse(localStorage.getItem('PZ_DAILY') || '{}');
 lastDailyDate = savedDaily.date || '';
 dailyCompleted = savedDaily.completed || false;
 } catch {}
