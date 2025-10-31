@@ -498,13 +498,28 @@ powerups.push({ type, x, y, r: 15 * S });
 }
 function updateBoss(dt) {
 if (boss) {
-boss.y += (player.y - boss.y) * 0.1;
+let currentSpeed = speed;
+if (slowMoTimer > 0) currentSpeed *= 0.5;
+boss.timer -= dt;
+if (boss.timer <= 0) {
+boss.flyingAway = true;
+}
+if (boss.flyingAway) {
+boss.x += currentSpeed * dt;
+if (boss.x > cssW + boss.width / 2) {
+boss = null;
+return;
+}
+} else {
+boss.y += (player.y - boss.y) * 0.05; // Slower pursuit for less exact following
+boss.y += Math.sin(t * boss.freq + boss.seed) * boss.amp * dt;
 boss.y = Math.max(boss.height / 2 + SAFE_MARGIN_Y, Math.min(cssH - boss.height / 2 - SAFE_MARGIN_Y, boss.y));
 
 bossShootTimer += dt;
 if (bossShootTimer >= 1) {
 bossShootTimer = 0;
 bossBullets.push({ x: boss.x - boss.width / 2, y: boss.y, vx: -speed * 1.5, r: 5 * S, _crossed: false });
+}
 }
 
 for (let i = bossBullets.length - 1; i >= 0; i--) {
@@ -521,11 +536,11 @@ addParticles(player.x, player.y, 25, '#00ffff');
 vib([60, 30, 60]);
 continue;
 }
-hit();
 addParticles(player.x, player.y, 10, '#ff0000');
 flashStart = performance.now();
 flashAlpha = 0.35;
 bossBullets.splice(i, 1);
+gameOver(); // Instant death on bullet hit
 }
 if (!b._crossed && b.x < player.x - player.r) {
 b._crossed = true;
@@ -543,9 +558,6 @@ levelDisplayTimer = 2;
 levelDisplayAlpha = 1;
 speed = Math.min(300, speed + 10);
 spawnEvery = Math.max(1.0, spawnEvery - 0.05);
-if (currentLevel > 3) {
-boss = null;
-}
 }
 if (!dailyCompleted && score >= dailyGoal) {
 dailyCompleted = true;
@@ -1058,7 +1070,7 @@ if (currentLevel === 3 && !boss) {
 obstacles = [];
 coins = [];
 powerups = [];
-boss = { x: cssW - 50 * S, y: cssH / 2, width: 100 * S, height: 50 * S };
+boss = { x: cssW - 100 * S, y: cssH / 2, width: 200 * S, height: 100 * S, timer: 30, flyingAway: false, seed: Math.random() * Math.PI * 2, freq: rand(2, 5), amp: rand(50, 100) };
 spawnTimer = Infinity;
 coinSpawnTimer = Infinity;
 powerupSpawnTimer = Infinity;
