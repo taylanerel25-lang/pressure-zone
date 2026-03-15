@@ -16,11 +16,11 @@
 
 // ── Constants ───────────────────────────────────────────────────
 const W = 680, H = 440, SHIP_X = 220;
-const GRAVITY = 0.14, THRUST = -0.18, MAX_VY = 3.8, DAMPING = 0.985;
+const GRAVITY = 0.10, THRUST = -0.13, MAX_VY = 2.6, DAMPING = 0.982;
 
 // ── Ship Skins ─────────────────────────────────────────────────
 const SKINS = [
-  { name:"CYAN HAWK",       h1:"#c8e8ff",h2:"#ffffff",h3:"#a0cfee",wing:"#00ccff",wAccent:"rgba(0,240,255,0.65)",eR:0,  eG:230,eB:255,shadow:"#00FFFF" },
+  { name:"CYAN HAWK",       h1:"#e8f4ff",h2:"#ffffff",h3:"#c8e4f8",wing:"#00ccff",wAccent:"rgba(0,240,255,0.65)",eR:0,  eG:230,eB:255,shadow:"#00FFFF" },
   { name:"GOLD RUSH",       h1:"#ffd080",h2:"#fffacc",h3:"#e8c060",wing:"#ffaa00",wAccent:"rgba(255,170,0,0.65)",  eR:255,eG:179,eB:0,  shadow:"#FFD700" },
   { name:"CRIMSON SPECTRE", h1:"#ff8888",h2:"#ffbbbb",h3:"#ff5555",wing:"#ff4444",wAccent:"rgba(255,68,68,0.65)",  eR:255,eG:50, eB:50, shadow:"#FF4444" },
   { name:"JADE PHANTOM",    h1:"#80ffcc",h2:"#ccffee",h3:"#55ffaa",wing:"#00ff99",wAccent:"rgba(0,255,170,0.65)",  eR:0,  eG:230,eB:160,shadow:"#00FF99" },
@@ -58,12 +58,12 @@ const GOALS = [
   { desc:"Survive 10 seconds", key:"survival", target:10 },
   { desc:"Pass 3 gates clean", key:"clean",    target:3  },
   { desc:"Score 20 points",    key:"score",    target:20 },
-  { desc:"Get a 3× streak",    key:"streak",   target:3  },
+  { desc:"Get a 3x streak",    key:"streak",   target:3  },
   { desc:"Collect a pickup",   key:"pickups",  target:1  },
   { desc:"Pass 8 gates",       key:"clean",    target:8  },
   { desc:"Score 50 points",    key:"score",    target:50 },
   { desc:"Survive 30 seconds", key:"survival", target:30 },
-  { desc:"Get a 8× streak",    key:"streak",   target:8  },
+  { desc:"Get a 8x streak",    key:"streak",   target:8  },
 ];
 
 // ── Daily challenge ─────────────────────────────────────────────
@@ -71,13 +71,13 @@ const DAILIES = [
   { desc:"Survive 45 seconds",  key:"survival", target:45 },
   { desc:"Pass 12 gates clean", key:"clean",    target:12 },
   { desc:"Score 60 points",     key:"score",    target:60 },
-  { desc:"Reach a 5× streak",   key:"streak",   target:5  },
+  { desc:"Reach a 5x streak",   key:"streak",   target:5  },
   { desc:"Collect 5 pickups",   key:"pickups",  target:5  },
 ];
 function getDaily(){ const d=new Date(), seed=d.getFullYear()*10000+(d.getMonth()+1)*100+d.getDate(); return DAILIES[seed%DAILIES.length]; }
 
 // ── Persistence ─────────────────────────────────────────────────
-const SAVE_VER = 2;
+const SAVE_VER = 3;
 function load(){
   try{
     const d=JSON.parse(localStorage.getItem("voidrun")||"{}");
@@ -89,8 +89,6 @@ function load(){
       if(d.activeZone==null)           d.activeZone=0;
       if(d.decentRunCount==null)       d.decentRunCount=0;
       if(d.graduatedOnboarding==null)  d.graduatedOnboarding=false;
-      if(!d.ghostPath)                 d.ghostPath=null;
-      if(!d.ghostScoreBySecond)        d.ghostScoreBySecond=null;
       d.saveVer=SAVE_VER;
     }
     return d;
@@ -106,7 +104,7 @@ function App(){
     tier:"CADET", nextTier:"PILOT", nextMin:15, dailyDone:false,
     ds:0, dStreak:0, dSurvival:0, dClean:0, dTip:"",
     newBest:false, delta:0, pbStreak:0, pbSurvival:0,
-    deathOverlay:false,
+    deathOverlay:false, lastScore:-1,
   });
 
   useEffect(()=>{
@@ -153,7 +151,7 @@ function App(){
     const todayStr=new Date().toDateString();
     if(dDate!==todayStr){ dDone=false; dDate=todayStr; }
 
-    // ── Cosmetics (mutable, persisted via sv) ────────────────
+    // ── Cosmetics ────────────────────────────────────────────
     let unlockedSkins  = sv.unlockedSkins  || [0];
     let activeSkin     = sv.activeSkin     || 0;
     let unlockedTrails = sv.unlockedTrails || [0];
@@ -162,15 +160,9 @@ function App(){
     let decentRunCount = sv.decentRunCount || 0;
     let graduatedOnboarding = sv.graduatedOnboarding || false;
     let consecutiveAbove = 0;
+    let prevRunStreak = 0; // for rubber-band after big streak loss
 
-    // ── Ghost run ────────────────────────────────────────────
-    let ghostPath           = sv.ghostPath           || null;
-    let ghostScoreBySecond  = sv.ghostScoreBySecond  || null;
-    let ghostRecord         = [];
-    let ghostScoreRecord    = [];
-    let lastGhostSecond     = -1;
-
-    // ── Idle swatch hitboxes (rebuilt each idle frame) ───────
+    // ── Idle swatch hitboxes ─────────────────────────────────
     let swatchHitboxes = [];
 
     // ── Save helper ──────────────────────────────────────────
@@ -179,7 +171,6 @@ function App(){
         bScore,bStreak,bSurvival,bClean,totalRuns,recentRuns,diffMod,dDate,dDone,
         unlockedSkins,activeSkin,unlockedTrails,activeTrail,activeZone,
         decentRunCount,graduatedOnboarding,
-        ghostPath,ghostScoreBySecond,
       });
     }
 
@@ -188,20 +179,17 @@ function App(){
       recentRuns.push(score); if(recentRuns.length>8) recentRuns.shift();
       const avg=recentRuns.reduce((a,b)=>a+b,0)/recentRuns.length;
 
-      // Graduate onboarding when player clears threshold once
       if(!graduatedOnboarding&&(score>=25||survTime>=30)){
         graduatedOnboarding=true;
       }
 
       if(!graduatedOnboarding){
-        // Onboarding: keep gaps wide until player proves basic competence
         diffMod=Math.max(-0.7, diffMod-0.2);
       } else if(avg<8){
-        consecutiveAbove=0; diffMod=Math.max(-1,   diffMod-0.25);
+        consecutiveAbove=0; diffMod=Math.max(-1, diffMod-0.25);
       } else if(avg<20){
         consecutiveAbove=0; diffMod=Math.max(-0.5, diffMod-0.06);
       } else if(avg>50){
-        // Hysteresis: tighten only after 2 consecutive above-avg runs
         consecutiveAbove++;
         if(consecutiveAbove>=2)
           diffMod=Math.min(avg>80?1.2:1.0, diffMod+(avg>80?0.15:0.10));
@@ -209,11 +197,15 @@ function App(){
         consecutiveAbove=0; diffMod*=0.93;
       }
 
+      // Rubber band: if player just lost after a big streak, widen gaps for next run
+      if(prevRunStreak>=6 && score<20){
+        diffMod=Math.max(-1, diffMod-0.3);
+      }
+
       if(score>=20){
         decentRunCount++;
-        // Zone progression
-        if(decentRunCount===4)  setTimeout(()=>bn("★ NEBULA ZONE UNLOCKED — IDLE TO SELECT","#cc88ff",220),800);
-        if(decentRunCount===10) setTimeout(()=>bn("★ VOID CORE UNLOCKED — IDLE TO SELECT","#FF4444",220),800);
+        if(decentRunCount===4)  setTimeout(()=>bn("NEBULA ZONE UNLOCKED — IDLE TO SELECT","#cc88ff",220),800);
+        if(decentRunCount===10) setTimeout(()=>bn("VOID CORE UNLOCKED — IDLE TO SELECT","#FF4444",220),800);
       }
     }
     function adaptGAP(wide){ return Math.max(118, 156+diffMod*(-32)+Math.random()*36+(wide?42:0)); }
@@ -221,13 +213,12 @@ function App(){
     // ── Cosmetic unlock check ────────────────────────────────
     function checkUnlocks(dispScore, bestStrRun, sTime){
       const queue=[];
-      if(dispScore>=25  &&!unlockedSkins.includes(1))  { unlockedSkins.push(1);  queue.push(["✦ GOLD RUSH SKIN UNLOCKED","#FFD700"]); }
-      if(bestStrRun>=8  &&!unlockedSkins.includes(2))  { unlockedSkins.push(2);  queue.push(["✦ CRIMSON SPECTRE UNLOCKED","#FF4444"]); }
-      if(sTime>=45      &&!unlockedSkins.includes(3))  { unlockedSkins.push(3);  queue.push(["✦ JADE PHANTOM UNLOCKED","#00FF99"]); }
-      if(dispScore>=140 &&!unlockedSkins.includes(4))  { unlockedSkins.push(4);  queue.push(["✦ VOID SHADOW UNLOCKED","#BB44FF"]); }
-      if(dispScore>=60  &&!unlockedTrails.includes(1)) { unlockedTrails.push(1); queue.push(["✦ SOLAR FLARE TRAIL UNLOCKED","#FFB300"]); }
-      if(dispScore>=100 &&!unlockedTrails.includes(2)) { unlockedTrails.push(2); queue.push(["✦ PHANTOM WAKE TRAIL UNLOCKED","#BB44FF"]); }
-      // Show banners sequentially so none stomp each other
+      if(dispScore>=25  &&!unlockedSkins.includes(1))  { unlockedSkins.push(1);  queue.push(["GOLD RUSH SKIN UNLOCKED","#FFD700"]); }
+      if(bestStrRun>=8  &&!unlockedSkins.includes(2))  { unlockedSkins.push(2);  queue.push(["CRIMSON SPECTRE UNLOCKED","#FF4444"]); }
+      if(sTime>=45      &&!unlockedSkins.includes(3))  { unlockedSkins.push(3);  queue.push(["JADE PHANTOM UNLOCKED","#00FF99"]); }
+      if(dispScore>=140 &&!unlockedSkins.includes(4))  { unlockedSkins.push(4);  queue.push(["VOID SHADOW UNLOCKED","#BB44FF"]); }
+      if(dispScore>=60  &&!unlockedTrails.includes(1)) { unlockedTrails.push(1); queue.push(["SOLAR FLARE TRAIL UNLOCKED","#FFB300"]); }
+      if(dispScore>=100 &&!unlockedTrails.includes(2)) { unlockedTrails.push(2); queue.push(["PHANTOM WAKE TRAIL UNLOCKED","#BB44FF"]); }
       queue.forEach(([msg,col],i)=>{ setTimeout(()=>{ bn(msg,col,160); sndUnlock(); }, i*320+600); });
     }
 
@@ -239,11 +230,11 @@ function App(){
     let streak=0, bestStrRun=0, cleanPasses=0, survTime=0, pickupsColl=0;
     let mult=1, multT=0, shielded=false, shieldT=0;
     let goalIdx=0, goalDone=false;
-    let nearFlash=0, shake=0, closestPx=999, closeShow=0;
-    let heat=0, obstCount=0;
+    let shake=0, closeShow=0;
+    let heat=0, obstCount=0, milestoneCount=0;
     let bnMsg="", bnT=0, bnCol="#00FFFF";
     let uiThrottle=0;
-    let pbPaceShow=0, pbPaceAhead=false;
+    let streakPBFired=false; // track if we've fired the mid-run streak PB banner this run
 
     function bn(msg,col="#00FFFF",dur=85){ bnMsg=msg; bnT=dur; bnCol=col; }
 
@@ -261,6 +252,11 @@ function App(){
       r:40+Math.random()*55, spd:0.07+Math.random()*0.11,
     }));
 
+    // Speed line seeds (fixed positions, animated per frame)
+    const speedLineSeeds=Array.from({length:10},()=>({
+      y:Math.random()*H, len:20+Math.random()*40, side:Math.random()>0.5?0:1,
+    }));
+
     // ── Reset ────────────────────────────────────────────────
     function reset(){
       shipY=H/2; shipVY=0; trail=[]; obstacles=[]; pickups=[]; particles=[];
@@ -268,10 +264,9 @@ function App(){
       streak=0; bestStrRun=0; cleanPasses=0; survTime=0; pickupsColl=0;
       mult=1; multT=0; shielded=false; shieldT=0;
       goalIdx=0; goalDone=false;
-      nearFlash=0; shake=0; closestPx=999; closeShow=0;
-      heat=0; obstCount=0; bnMsg=""; bnT=0;
-      pbPaceShow=0; pbPaceAhead=false;
-      ghostRecord=[]; ghostScoreRecord=[]; lastGhostSecond=-1;
+      shake=0; closeShow=0;
+      heat=0; obstCount=0; milestoneCount=0; bnMsg=""; bnT=0;
+      streakPBFired=false;
       totalRuns++;
     }
 
@@ -281,7 +276,9 @@ function App(){
       const wide=phase===1, drift=phase===2;
       const GAP=adaptGAP(wide);
       const gapY=50+Math.random()*(H-GAP-100);
-      obstacles.push({x:W+28, gapY, baseGapY:gapY, GAP, drift, dDir:Math.random()>0.5?1:-1, dOff:0, scored:false, nearMissed:false});
+      const milestone=(obstCount>0 && obstCount%25===0);
+      obstacles.push({x:W+28, gapY, baseGapY:gapY, GAP, drift, dDir:Math.random()>0.5?1:-1, dOff:0, scored:false, nearMissed:false, milestone});
+      if(milestone){ milestoneCount++; bn("GATE "+milestoneCount*25,"#FFD700",55); }
       obstCount++;
       if(Math.random()<0.33){
         const type=Math.random()<0.5?"score":Math.random()<0.6?"mult":"shield";
@@ -314,19 +311,18 @@ function App(){
       const sk = SKINS[si] || SKINS[0];
       const tilt=Math.max(-0.28,Math.min(0.28,vy*0.045));
       const savedFlick=engFlick;
-      // Only advance flick for the real player ship (skinIdx===undefined means player)
       if(skinIdx==null) engFlick=(engFlick+0.18)%(Math.PI*2);
       const fl=0.85+0.15*Math.sin(engFlick);
       ctx.save(); ctx.globalAlpha=alpha; ctx.translate(x,y); ctx.rotate(tilt);
 
-      // Shield bubble
       if(shielded&&skinIdx==null){
         ctx.beginPath(); ctx.arc(2,0,33,0,Math.PI*2);
         ctx.strokeStyle=`rgba(0,255,160,${0.35+0.2*Math.sin(Date.now()*0.005)})`;
         ctx.lineWidth=2; ctx.shadowBlur=14; ctx.shadowColor="#00ffb3"; ctx.stroke();
       }
 
-      const hg=28+heat*20;
+      // Glow — boosted for better visibility
+      const hg=48+heat*22;
       ctx.shadowBlur=hg; ctx.shadowColor=sk.shadow;
 
       // Fuselage
@@ -336,10 +332,12 @@ function App(){
       const hull=ctx.createLinearGradient(-20,-10,28,10);
       hull.addColorStop(0,sk.h1); hull.addColorStop(0.4,sk.h2); hull.addColorStop(1,sk.h3);
       ctx.fillStyle=hull; ctx.fill();
+      // White halo outline to make ship pop against dark background
+      ctx.shadowBlur=0; ctx.strokeStyle="rgba(255,255,255,0.18)"; ctx.lineWidth=1.5; ctx.stroke();
 
       // Ridge
       ctx.beginPath();ctx.moveTo(20,-2);ctx.lineTo(6,-6);ctx.lineTo(-14,-7);ctx.lineTo(-18,-4);ctx.lineTo(-6,-5);ctx.lineTo(10,-3);ctx.closePath();
-      ctx.fillStyle="rgba(160,210,255,0.42)"; ctx.shadowBlur=0; ctx.fill();
+      ctx.fillStyle="rgba(160,210,255,0.42)"; ctx.fill();
 
       // Top wing
       ctx.beginPath();ctx.moveTo(6,-8);ctx.lineTo(-4,-22);ctx.lineTo(-14,-22);ctx.lineTo(-18,-10);ctx.lineTo(-2,-8);ctx.closePath();
@@ -362,19 +360,19 @@ function App(){
       ctx.fillStyle=cg; ctx.shadowBlur=6; ctx.shadowColor="#aaf0ff"; ctx.fill();
       ctx.beginPath(); ctx.ellipse(13,-1.5,3.5,1.5,-0.3,0,Math.PI*2); ctx.fillStyle="rgba(255,255,255,0.7)"; ctx.fill();
 
-      // Nacelles
+      // Nacelles — boosted glow
       [-6,6].forEach(ey=>{
         ctx.beginPath(); ctx.ellipse(-15,ey,5,2.5,0,0,Math.PI*2); ctx.fillStyle="#b8d8f0"; ctx.shadowBlur=0; ctx.fill();
         ctx.beginPath(); ctx.ellipse(-19,ey,2.8,2,0,0,Math.PI*2);
-        ctx.fillStyle=`rgba(${sk.eR},${sk.eG},${sk.eB},${0.8*fl})`; ctx.shadowBlur=12*fl; ctx.shadowColor=sk.shadow; ctx.fill();
+        ctx.fillStyle=`rgba(${sk.eR},${sk.eG},${sk.eB},${0.8*fl})`; ctx.shadowBlur=18*fl; ctx.shadowColor=sk.shadow; ctx.fill();
       });
 
-      // Main engine
+      // Main engine — boosted glow
       ctx.beginPath(); ctx.ellipse(-18,0,4.5,3.5,0,0,Math.PI*2); ctx.fillStyle="#cce8ff"; ctx.shadowBlur=0; ctx.fill();
       ctx.beginPath(); ctx.ellipse(-20,0,3.2,2.4,0,0,Math.PI*2);
-      ctx.fillStyle=`rgba(${sk.eR},${sk.eG},${sk.eB},${fl})`; ctx.shadowBlur=20*fl; ctx.shadowColor=sk.shadow; ctx.fill();
+      ctx.fillStyle=`rgba(${sk.eR},${sk.eG},${sk.eB},${fl})`; ctx.shadowBlur=28*fl; ctx.shadowColor=sk.shadow; ctx.fill();
 
-      if(skinIdx!=null) engFlick=savedFlick; // restore for ghost so player flicker isn't doubled
+      if(skinIdx!=null) engFlick=savedFlick;
       ctx.restore();
     }
 
@@ -398,26 +396,29 @@ function App(){
       ctx.restore();
     }
 
-    // ── Draw obstacle (zone-aware) ────────────────────────────
+    // ── Draw obstacle (zone + milestone aware) ───────────────
     function drawObs(obs){
       const zn=ZONES[activeZone]||ZONES[0];
       const hw=20,lx=obs.x-hw,rw=hw*2,botY=obs.gapY+obs.GAP;
-      const gc=`rgba(0,${Math.floor(200+heat*55)},255,0.95)`;
+      // Milestone gates glow gold, otherwise heat-scaled cyan
+      const gc=obs.milestone
+        ? `rgba(255,200,0,0.95)`
+        : `rgba(0,${Math.floor(200+heat*55)},255,0.95)`;
       ctx.save();
-      ctx.fillStyle="#050d1a"; ctx.fillRect(lx,0,rw,obs.gapY); ctx.fillRect(lx,botY,rw,H-botY);
+      // Obstacle wall fill — slightly lighter than background for distinction
+      ctx.fillStyle="#081525"; ctx.fillRect(lx,0,rw,obs.gapY); ctx.fillRect(lx,botY,rw,H-botY);
       ctx.strokeStyle="rgba(0,180,255,0.05)"; ctx.lineWidth=1;
       for(let yy=16;yy<obs.gapY-4;yy+=20){ctx.beginPath();ctx.moveTo(lx+5,yy);ctx.lineTo(lx+rw-5,yy);ctx.stroke();}
       for(let yy=botY+16;yy<H-4;yy+=20){ctx.beginPath();ctx.moveTo(lx+5,yy);ctx.lineTo(lx+rw-5,yy);ctx.stroke();}
-      // Zone-specific rim tint
-      if(zn.obsRim){
+      if(zn.obsRim&&!obs.milestone){
         ctx.strokeStyle=zn.obsRim; ctx.lineWidth=3;
         ctx.strokeRect(lx-1,0,rw+2,obs.gapY); ctx.strokeRect(lx-1,botY,rw+2,H-botY);
-      } else {
+      } else if(!obs.milestone) {
         ctx.strokeStyle="rgba(0,200,255,0.1)"; ctx.lineWidth=1;
         ctx.strokeRect(lx,0,rw,obs.gapY); ctx.strokeRect(lx,botY,rw,H-botY);
       }
-      ctx.shadowBlur=18+heat*10; ctx.shadowColor="#00FFFF";
-      ctx.strokeStyle=gc; ctx.lineWidth=2.5;
+      ctx.shadowBlur=obs.milestone?28:18+heat*10; ctx.shadowColor=obs.milestone?"#FFD700":"#00FFFF";
+      ctx.strokeStyle=gc; ctx.lineWidth=3.5; // thicker gap edges for clarity
       ctx.beginPath();ctx.moveTo(lx-1,obs.gapY);ctx.lineTo(lx+rw+1,obs.gapY);ctx.stroke();
       ctx.beginPath();ctx.moveTo(lx-1,botY);ctx.lineTo(lx+rw+1,botY);ctx.stroke();
       ctx.fillStyle=gc; ctx.shadowBlur=10;
@@ -432,7 +433,7 @@ function App(){
       p.pulse+=0.08;
       const g=0.7+0.3*Math.sin(p.pulse);
       const col=p.type==="score"?"#00FFFF":p.type==="mult"?"#FFD700":"#00FF99";
-      const lbl=p.type==="score"?"S":p.type==="mult"?"2×":"★";
+      const lbl=p.type==="score"?"S":p.type==="mult"?"2x":"*";
       ctx.save(); ctx.translate(p.x,p.y);
       ctx.shadowBlur=16*g; ctx.shadowColor=col;
       ctx.beginPath(); ctx.arc(0,0,10,0,Math.PI*2); ctx.strokeStyle=col; ctx.lineWidth=1.5; ctx.globalAlpha=0.55+0.3*g; ctx.stroke();
@@ -455,29 +456,10 @@ function App(){
       if(goalDone)return;
       if(gProg()>=1){
         goalDone=true; sndCheer(); rawScore+=500;
-        bn("✓ "+GOALS[goalIdx%GOALS.length].desc.toUpperCase()+"  +"+(50*mult),"#00FFFF",120);
+        bn("GOAL: "+GOALS[goalIdx%GOALS.length].desc.toUpperCase()+"  +"+(50*mult),"#00FFFF",120);
         burst(SHIP_X,shipY,20);
         setTimeout(()=>{ goalDone=false; goalIdx++; },1900);
       }
-    }
-
-    // ── Ghost ship draw ───────────────────────────────────────
-    function drawGhost(){
-      if(!ghostPath||tick<=60) return;
-      const gIdx=Math.floor(tick/12);
-      if(gIdx>=ghostPath.length) return;
-      drawShip(SHIP_X-55, ghostPath[gIdx], 0, 0.22, 0);
-    }
-
-    // ── PB pace comparison ────────────────────────────────────
-    function checkPBPace(dispScore){
-      if(!ghostScoreBySecond) return;
-      const sec=Math.floor(survTime);
-      if(sec<3||sec>=ghostScoreBySecond.length) return;
-      const pbAt=ghostScoreBySecond[sec];
-      if(pbAt==null) return;
-      const diff=dispScore-pbAt;
-      if(Math.abs(diff)>4){ pbPaceAhead=diff>0; pbPaceShow=70; }
     }
 
     // ── Main loop ────────────────────────────────────────────
@@ -489,24 +471,45 @@ function App(){
       ctx.save(); ctx.translate(sx,sy);
       ctx.fillStyle="#00000e"; ctx.fillRect(-20,-20,W+40,H+40);
 
-      // Near miss flash
-      if(nearFlash>0){ ctx.fillStyle=`rgba(0,255,255,${nearFlash*0.02})`; ctx.fillRect(-20,-20,W+40,H+40); nearFlash=Math.max(0,nearFlash-1); }
+      // Speed lines — fade in with heat
+      if(state==="playing"&&heat>0.05){
+        const lineAlpha=heat*0.18;
+        ctx.save(); ctx.globalAlpha=lineAlpha;
+        speedLineSeeds.forEach((sl,i)=>{
+          // Update y position slowly
+          sl.y=(sl.y+0.4*(1+heat))%H;
+          const lx=sl.side===0?0:W-sl.len-10;
+          ctx.strokeStyle="rgba(255,255,255,0.9)";
+          ctx.lineWidth=0.8; ctx.shadowBlur=0;
+          ctx.beginPath(); ctx.moveTo(lx,sl.y); ctx.lineTo(lx+sl.len,sl.y); ctx.stroke();
+        });
+        ctx.restore();
+      }
 
       // Zone-aware vignette
       const zn=ZONES[activeZone]||ZONES[0];
       const vigStr=activeZone===2
-        ? `rgba(${Math.floor(30+15*Math.sin(Date.now()*0.0015))},0,0,0.72)` // VOID CORE: pulsing red
+        ? `rgba(${Math.floor(30+15*Math.sin(Date.now()*0.0015))},0,0,0.72)`
         : zn.vig;
       const vig=ctx.createRadialGradient(W/2,H/2,H*0.1,W/2,H/2,H*0.9);
       vig.addColorStop(0,"rgba(0,0,0,0)"); vig.addColorStop(1,vigStr);
       ctx.fillStyle=vig; ctx.fillRect(-20,-20,W+40,H+40);
 
-      // Stars
+      // Danger vignette near walls — subtle red tint when ship close to top/bottom
+      if(state==="playing"){
+        const dangerT=Math.max(0, 1-Math.min(shipY, H-shipY)/55)*0.15;
+        if(dangerT>0){
+          ctx.fillStyle=`rgba(200,0,0,${dangerT})`;
+          ctx.fillRect(-20,-20,W+40,H+40);
+        }
+      }
+
+      // Stars — dimmed so ship is the dominant bright object
       const lspd=[0.12,0.35,0.8];
       const zoneMult=zn.starMult;
       stars.forEach(s=>{
         s.tw+=0.007;
-        const a=s.a*(0.78+0.22*Math.sin(s.tw));
+        const a=s.a*(0.78+0.22*Math.sin(s.tw))*0.6;
         if(state==="playing"){
           s.x-=lspd[s.layer]*(speed/1.6)*(1+heat*0.75)*zoneMult;
           if(s.x<-2){s.x=W+2;s.y=Math.random()*H;}
@@ -533,11 +536,6 @@ function App(){
         speed=1.6+tick*0.00028;
         if(tick%1100===0&&spawnI>72) spawnI-=4;
 
-        // Ghost recording
-        if(tick%12===0&&ghostRecord.length<3600) ghostRecord.push(Math.round(shipY));
-        const curSec=Math.floor(survTime);
-        if(curSec!==lastGhostSecond){ lastGhostSecond=curSec; ghostScoreRecord[curSec]=Math.floor(rawScore/10); }
-
         const tgtHeat=Math.min(1,(speed-1.6)*1.2+streak*0.04);
         heat+=(tgtHeat-heat)*0.008;
 
@@ -545,7 +543,6 @@ function App(){
         if(shieldT>0){ shieldT--; if(shieldT===0){shielded=false; bn("SHIELD DOWN","#ff4444",60);} }
         if(bnT>0) bnT--;
         if(closeShow>0) closeShow--;
-        if(pbPaceShow>0) pbPaceShow--;
         setHum(speed,true);
 
         shipVY+=pressing?THRUST:GRAVITY;
@@ -583,17 +580,24 @@ function App(){
               const dTop=shipY-o.gapY, dBot=(o.gapY+o.GAP)-shipY;
               const minD=Math.min(dTop,dBot)-HR;
               if(minD<15&&!o.nearMissed){
-                o.nearMissed=true; closestPx=Math.min(closestPx,minD);
-                nearFlash=14; shake=5; closeShow=80; sndNear(); bn("⚡ CLOSE CALL!","#FFAA00",75);
+                o.nearMissed=true;
+                closeShow=80; sndNear(); bn("CLOSE CALL!","#FFAA00",75);
+                // No flash, no shake on near miss
               }
             }
           }
           if(!o.scored&&o.x+20<SHIP_X-HR){
             o.scored=true; streak++; cleanPasses++;
             bestStrRun=Math.max(bestStrRun,streak); sndGate(streak);
-            if(streak===3)  bn("3× STREAK!","#00FFFF",65);
-            if(streak===5)  {bn("5× STREAK! 🔥","#FFD700",90);burst(SHIP_X,shipY,12);sndCheer();}
-            if(streak===10) {bn("10× STREAK!! 🔥🔥","#FF6600",120);burst(SHIP_X,shipY,22);sndCheer();setTimeout(sndCheer,250);}
+            if(streak===3)  bn("3x STREAK!","#00FFFF",65);
+            if(streak===5)  {bn("5x STREAK!","#FFD700",90);burst(SHIP_X,shipY,12);sndCheer();}
+            if(streak===10) {bn("10x STREAK!!","#FF6600",120);burst(SHIP_X,shipY,22);sndCheer();setTimeout(sndCheer,250);}
+            // Mid-run streak personal best alert
+            if(!streakPBFired && bestStrRun>bStreak && bStreak>0){
+              streakPBFired=true;
+              setTimeout(()=>bn("NEW STREAK RECORD! "+bestStrRun+"x","#FFD700",130),80);
+              sndCheer();
+            }
           }
         });
 
@@ -603,7 +607,7 @@ function App(){
           if(Math.sqrt(dx*dx+dy*dy)<18){
             p.collected=true; pickupsColl++; sndPickup(); burst(p.x,p.y,12);
             if(p.type==="score")  {rawScore+=300; bn("+30 SCORE SURGE!","#00FFFF",80);}
-            if(p.type==="mult")   {mult=2; multT=480; bn("2× MULTIPLIER  8 SECS!","#FFD700",90);}
+            if(p.type==="mult")   {mult=2; multT=480; bn("2x MULTIPLIER  8 SECS!","#FFD700",90);}
             if(p.type==="shield") {shielded=true;shieldT=600;bn("SHIELD ACTIVE!","#00FF99",90);}
           }
         });
@@ -615,26 +619,22 @@ function App(){
           const done=(dc.key==="survival"&&survTime>=dc.target)||(dc.key==="clean"&&cleanPasses>=dc.target)||
                      (dc.key==="score"&&rawScore/10>=dc.target)||(dc.key==="streak"&&bestStrRun>=dc.target)||
                      (dc.key==="pickups"&&pickupsColl>=dc.target);
-          if(done){dDone=true;rawScore+=1000;sndCheer();setTimeout(sndCheer,300);bn("★ DAILY CHALLENGE COMPLETE! +"+(100*mult)+" ★","#FFD700",220);}
+          if(done){dDone=true;rawScore+=1000;sndCheer();setTimeout(sndCheer,300);bn("DAILY CHALLENGE COMPLETE! +"+(100*mult),"#FFD700",220);}
         }
 
         const dispScore=Math.floor(rawScore*mult/10);
-        if(tick%180===0) checkPBPace(dispScore);
 
         if(hit){
           state="dead"; deathT=0;
           const nb=dispScore>bScore, delta=nb?0:bScore-dispScore;
+          prevRunStreak=bestStrRun; // store for rubber band next run
           updateDiff(dispScore);
           bScore=Math.max(bScore,dispScore);
           bStreak=Math.max(bStreak,bestStrRun); bSurvival=Math.max(bSurvival,survTime); bClean=Math.max(bClean,cleanPasses);
-          // Save ghost on new best
-          if(nb){
-            ghostPath=ghostRecord.slice();
-            ghostScoreBySecond=ghostScoreRecord.slice();
-          }
           checkUnlocks(dispScore, bestStrRun, survTime);
           persist();
-          setHum(speed,false); explode(SHIP_X,shipY); sndDie(); shake=14;
+          setHum(speed,false); explode(SHIP_X,shipY); sndDie();
+          shake=5; // subtle shake on death only
           const tip=survTime<8?"TIP: HOLD LONGER — LET THE SHIP FLOAT":
                     cleanPasses<3?"TIP: AIM FOR THE CENTER OF THE GAP":
                     streak>4?"GREAT STREAK — AIM HIGHER NEXT RUN":
@@ -643,9 +643,8 @@ function App(){
           setUi(u=>({...u,state:"dead",score:dispScore,best:bScore,
             ds:dispScore,dStreak:bestStrRun,dSurvival:Math.floor(survTime),dClean:cleanPasses,
             newBest:nb,delta,dTip:tip,pbStreak:bStreak,pbSurvival:Math.floor(bSurvival),
-            dailyDone:dDone,deathOverlay:false,
+            dailyDone:dDone,deathOverlay:false,lastScore:dispScore,
           }));
-          // Delay overlay so explosion plays first
           setTimeout(()=>setUi(u=>u.state==="dead"?{...u,deathOverlay:true}:u), 340);
         } else {
           if(++uiThrottle%8===0){
@@ -665,9 +664,6 @@ function App(){
         ctx.beginPath(); ctx.arc(pt.x-i*0.2,pt.y,0.5+t*2.5,0,Math.PI*2);
         ctx.fillStyle=trailFn(t,i,heat); ctx.fill();
       });
-
-      // Ghost (behind player, visual only)
-      if(state==="playing") drawGhost();
 
       if(state==="playing") drawFlame(SHIP_X,shipY,shipVY);
       obstacles.forEach(drawObs);
@@ -698,21 +694,12 @@ function App(){
           ctx.font="700 13px 'Orbitron',sans-serif"; ctx.shadowBlur=14; ctx.shadowColor=bnCol; ctx.fillStyle=bnCol;
           ctx.fillText(bnMsg,W/2,52); ctx.restore();
         }
-        // Close call
+        // Close call (text only — no flash)
         if(closeShow>0){
           const ca=Math.min(1,closeShow/12)*Math.min(1,(closeShow/40)*2.5);
           ctx.save(); ctx.globalAlpha=ca;
           ctx.font="900 18px 'Orbitron',sans-serif"; ctx.shadowBlur=22; ctx.shadowColor="#FFAA00"; ctx.fillStyle="#FFAA00";
-          ctx.fillText("⚡ CLOSE CALL ⚡",W/2,H/2-60); ctx.restore();
-        }
-        // PB pace indicator
-        if(pbPaceShow>0){
-          const pa=Math.min(1,pbPaceShow/14)*0.88;
-          ctx.save(); ctx.globalAlpha=pa;
-          ctx.font="400 8px 'Orbitron',sans-serif"; ctx.textAlign="right";
-          ctx.fillStyle=pbPaceAhead?"#44FF88":"#FFAA44";
-          ctx.shadowBlur=8; ctx.shadowColor=pbPaceAhead?"#44FF88":"#FFAA44";
-          ctx.fillText(pbPaceAhead?"↑ AHEAD OF PB PACE":"↓ BEHIND PB PACE",W-14,18); ctx.restore();
+          ctx.fillText("CLOSE CALL",W/2,H/2-60); ctx.restore();
         }
         // Goal progress bar
         const gObj=GOALS[goalIdx%GOALS.length];
@@ -743,7 +730,7 @@ function App(){
         ctx.font="400 8px 'Orbitron',sans-serif"; ctx.shadowBlur=0;
         if(!graduatedOnboarding){
           ctx.fillStyle="rgba(0,255,160,0.65)"; ctx.shadowBlur=8; ctx.shadowColor="#00FF99";
-          ctx.fillText("✦ FLIGHT ASSIST ACTIVE",W/2,H/2);
+          ctx.fillText("FLIGHT ASSIST ACTIVE",W/2,H/2);
         } else if(bScore>0){
           ctx.fillStyle="rgba(0,230,255,0.35)";
           ctx.fillText(getTier(bScore).name,W/2,H/2);
@@ -753,12 +740,15 @@ function App(){
         // Controls hint
         ctx.font="400 9px 'Orbitron',sans-serif"; ctx.fillStyle="rgba(0,230,255,0.4)";
         ctx.fillText("HOLD SPACE · CLICK & HOLD · TAP",W/2,H/2+16);
+
+        // Best + last run scores
         if(bScore>0){
-          ctx.font="400 9px 'Orbitron',sans-serif"; ctx.fillStyle="rgba(255,255,255,0.22)";
-          ctx.fillText(`BEST: ${String(bScore).padStart(6,"0")}`,W/2,H/2+34);
+          ctx.font="400 9px 'Orbitron',sans-serif";
+          ctx.fillStyle="rgba(255,255,255,0.22)";
+          ctx.fillText("BEST: "+String(bScore).padStart(6,"0"),W/2,H/2+34);
         }
 
-        // ── Skin swatches ─────────────────────────────
+        // Skin swatches
         const skinY=H/2+62;
         ctx.font="400 6px 'Orbitron',sans-serif"; ctx.fillStyle="rgba(255,255,255,0.18)";
         ctx.fillText("SHIP",W/2,skinY-14);
@@ -778,17 +768,16 @@ function App(){
           if(!unlocked){
             ctx.fillStyle="rgba(0,0,0,0.5)"; ctx.fill();
             ctx.font="9px monospace"; ctx.globalAlpha=0.55;
-            ctx.fillStyle="#fff"; ctx.fillText("🔒",cx,skinY+3.5);
+            ctx.fillStyle="#fff"; ctx.fillText("?",cx,skinY+3.5);
           }
           ctx.restore();
           swatchHitboxes.push({x:cx,y:skinY,r:16,action:()=>{
             if(!unlocked) return;
-            activeSkin=i;
-            persist();
+            activeSkin=i; persist();
           }});
         });
 
-        // ── Trail swatches ─────────────────────────────
+        // Trail swatches
         const trailY=H/2+95;
         ctx.font="400 6px 'Orbitron',sans-serif"; ctx.fillStyle="rgba(255,255,255,0.18)"; ctx.shadowBlur=0;
         ctx.fillText("TRAIL",W/2,trailY-12);
@@ -806,27 +795,23 @@ function App(){
           ctx.beginPath(); ctx.arc(cx,trailY,10,0,Math.PI*2);
           ctx.strokeStyle=active?"rgba(255,255,255,0.9)":"rgba(255,255,255,0.18)";
           ctx.lineWidth=active?2:1; ctx.shadowBlur=0; ctx.stroke();
-          if(!unlocked){
-            ctx.fillStyle="rgba(0,0,0,0.5)"; ctx.fill();
-          }
+          if(!unlocked){ ctx.fillStyle="rgba(0,0,0,0.5)"; ctx.fill(); }
           ctx.restore();
           swatchHitboxes.push({x:cx,y:trailY,r:14,action:()=>{
             if(!unlocked) return;
-            activeTrail=i;
-            persist();
+            activeTrail=i; persist();
           }});
         });
 
-        // ── Zone selector ──────────────────────────────
+        // Zone selector
         const maxUnlockedZone=decentRunCount>=10?2:decentRunCount>=4?1:0;
         if(maxUnlockedZone>=1){
           const zoneY=H/2+122;
-          const znLabel=`ZONE: ${ZONES[activeZone].name} ▶`;
+          const znLabel="ZONE: "+ZONES[activeZone].name+" >";
           ctx.font="400 7px 'Orbitron',sans-serif"; ctx.fillStyle="rgba(255,255,255,0.28)"; ctx.shadowBlur=0;
           ctx.fillText(znLabel,W/2,zoneY);
           swatchHitboxes.push({x:W/2,y:zoneY,r:55,action:()=>{
-            activeZone=(activeZone+1)%(maxUnlockedZone+1);
-            persist();
+            activeZone=(activeZone+1)%(maxUnlockedZone+1); persist();
           }});
         }
 
@@ -855,7 +840,6 @@ function App(){
 
     const pd=(e)=>{
       e.preventDefault();
-      // Check swatch hitboxes on idle screen first
       if(state==="idle"){
         const rect=canvas.getBoundingClientRect();
         const px=(e.clientX-rect.left)*(W/rect.width);
@@ -882,7 +866,7 @@ function App(){
   },[]);
 
   const {state,score,best,streak,multiplier,shielded,tier,nextTier,nextMin,dailyDone,
-         ds,dStreak,dSurvival,dClean,dTip,newBest,delta,pbStreak,pbSurvival,deathOverlay}=ui;
+         ds,dStreak,dSurvival,dClean,dTip,newBest,delta,pbStreak,pbSurvival,deathOverlay,lastScore}=ui;
 
   return (
     <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",
@@ -897,11 +881,11 @@ function App(){
           <span style={{color:multiplier>1?"#FFD700":"#00FFFF",fontWeight:700,fontSize:"17px"}}>
             {String(score||0).padStart(6,"0")}
           </span>
-          {multiplier>1&&<span style={{fontSize:"9px",color:"#FFD700",marginLeft:5}}>×{multiplier}</span>}
+          {multiplier>1&&<span style={{fontSize:"9px",color:"#FFD700",marginLeft:5}}>x{multiplier}</span>}
         </div>
         <div style={{display:"flex",gap:10,alignItems:"center"}}>
-          {streak>0&&state==="playing"&&<div style={{fontSize:"8px",color:"#00FFFF",letterSpacing:"2px",textShadow:"0 0 8px #00FFFF"}}>{streak}× STREAK</div>}
-          {shielded&&<div style={{fontSize:"8px",color:"#00FF99"}}>🛡</div>}
+          {streak>0&&state==="playing"&&<div style={{fontSize:"8px",color:"#00FFFF",letterSpacing:"2px",textShadow:"0 0 8px #00FFFF"}}>{streak}x STREAK</div>}
+          {shielded&&<div style={{fontSize:"8px",color:"#00FF99"}}>SHIELD</div>}
           {tier&&state==="playing"&&<div style={{fontSize:"7px",color:"rgba(255,255,255,0.22)",letterSpacing:"3px"}}>{tier}</div>}
         </div>
         <div style={{fontSize:"9px",letterSpacing:"2px",color:"rgba(255,255,255,0.18)"}}>
@@ -925,7 +909,7 @@ function App(){
             </div>
 
             {newBest
-              ? <div style={{fontSize:"10px",color:"#FFD700",letterSpacing:"4px",textShadow:"0 0 14px #FFD700",marginBottom:5}}>✦ NEW PERSONAL BEST ✦</div>
+              ? <div style={{fontSize:"10px",color:"#FFD700",letterSpacing:"4px",textShadow:"0 0 14px #FFD700",marginBottom:5}}>NEW PERSONAL BEST</div>
               : delta>0&&<div style={{fontSize:"9px",color:"rgba(255,200,100,0.55)",letterSpacing:"2px",marginBottom:5}}>{delta} FROM YOUR BEST</div>
             }
 
@@ -937,10 +921,10 @@ function App(){
             <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:"4px 14px",
               marginBottom:12,padding:"10px 20px",border:"1px solid rgba(0,255,255,0.1)",background:"rgba(0,0,0,0.35)"}}>
               {[
-                ["STREAK",   `${dStreak||0}×`,          `PB ${pbStreak||0}×`],
+                ["STREAK",   `${dStreak||0}x`,          `PB ${pbStreak||0}x`],
                 ["SURVIVED", `${dSurvival||0}s`,         `PB ${pbSurvival||0}s`],
                 ["CLEAN",    `${dClean||0} gates`,       ""],
-                ["RANK",     getTier(ds||0).name,        nextTier?`→ ${nextTier} @ ${nextMin}`:""],
+                ["RANK",     getTier(ds||0).name,        nextTier?`> ${nextTier} @ ${nextMin}`:""],
               ].map(([lbl,val,sub])=>(
                 <div key={lbl} style={{textAlign:"center"}}>
                   <div style={{fontSize:"6px",color:"rgba(255,255,255,0.22)",letterSpacing:"2px",marginBottom:2}}>{lbl}</div>
@@ -951,7 +935,7 @@ function App(){
             </div>
 
             {dTip&&<div style={{fontSize:"8px",color:"rgba(255,200,60,0.72)",letterSpacing:"2px",marginBottom:10,maxWidth:300,textAlign:"center",lineHeight:1.7}}>{dTip}</div>}
-            {dailyDone&&<div style={{fontSize:"8px",color:"#FFD700",letterSpacing:"3px",marginBottom:8}}>★ DAILY CHALLENGE COMPLETE</div>}
+            {dailyDone&&<div style={{fontSize:"8px",color:"#FFD700",letterSpacing:"3px",marginBottom:8}}>DAILY CHALLENGE COMPLETE</div>}
 
             <div style={{fontSize:"8px",color:"rgba(255,255,255,0.28)",letterSpacing:"3px",animation:"pulse 1.2s ease-in-out infinite"}}>
               PRESS SPACE OR TAP TO RETRY
@@ -963,10 +947,13 @@ function App(){
       {/* Footer */}
       <div style={{display:"flex",justifyContent:"space-between",width:`${W}px`,marginTop:9,alignItems:"center"}}>
         <div style={{fontSize:"7px",letterSpacing:"3px",color:"rgba(255,255,255,0.07)"}}>
-          HOLD TO THRUST · RELEASE TO FALL
+          {lastScore>=0&&state!=="playing"
+            ? `LAST: ${String(lastScore).padStart(6,"0")}`
+            : "HOLD TO THRUST · RELEASE TO FALL"
+          }
         </div>
         <div style={{fontSize:"7px",letterSpacing:"2px",color:dailyDone?"#FFD700":"rgba(255,255,255,0.13)"}}>
-          {dailyDone?"★ DAILY DONE":getDaily().desc}
+          {dailyDone?"DAILY DONE":getDaily().desc}
         </div>
       </div>
 
